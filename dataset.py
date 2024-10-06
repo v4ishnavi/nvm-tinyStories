@@ -7,7 +7,7 @@ import json
 import torch
 from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset
-
+from tqdm import tqdm
 
 class Vocab:
     def __init__(self, vocab_file):
@@ -51,16 +51,16 @@ class TokenizedDataset(Dataset):
 
 # reduces vocabulary by converting all text to lower case and keeping only
 # letters.
-def create_reduced_vocab_and_save(ds, vocab_size_limit=1500, output_file="vocab.json"):
-    def process_text(text, wc):
-        words = re.findall(r'\b[a-z]+\b', text.lower())
-        wc.update(words)
-        return wc
-
+def create_reduced_vocab_and_save(ds, vocab_size_limit=5000, output_file="vocab.json"):
     word_counter = Counter()
+
+    def process_text(text):
+        words = re.findall(r'\b[a-z]+\b', text.lower())
+        word_counter.update(words)
+
     for split in ['train', 'validation']:
-        for item in ds[split]:
-            word_counter = process_text(item['text'], word_counter)
+        for item in tqdm(ds[split]):
+            process_text(item['text'])
 
     most_common_words = dict(word_counter.most_common(vocab_size_limit))
     with open(output_file, "w") as f:
@@ -110,6 +110,7 @@ def main(vocab_size_limit, vocab_file):
     tokenized_ds = tokenize_dataset(ds, vocab)
     all_tokens = concatenate_tokens(tokenized_ds)
 
+    logging.info("Creating a dataloader")
     block_size = 64  # Length of sequences
     batch_size = 32
     dataloader = create_dataloader(all_tokens, block_size=block_size, batch_size=batch_size)
