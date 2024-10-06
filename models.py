@@ -3,8 +3,6 @@ import torch.nn as nn
 import torch.nn.init as init
 import math
 
-# Device configuration
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Positional Encoding
 class PositionalEncoding(nn.Module):
@@ -22,7 +20,7 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.size(0), :]
         return x
 
-# RMSNorm Layer
+
 class RMSNorm(nn.Module):
     def __init__(self, d_model, eps=1e-8):
         super(RMSNorm, self).__init__()
@@ -33,7 +31,7 @@ class RMSNorm(nn.Module):
         norm = torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
         return x * norm * self.weight
 
-# Model Definitions
+
 class BasicTransformer(nn.Module):
     def __init__(self, vocab_size, d_model=512, nhead=8, num_layers=6, dim_feedforward=2048):
         super(BasicTransformer, self).__init__()
@@ -50,17 +48,23 @@ class BasicTransformer(nn.Module):
 
         src_key_padding_mask = (attention_mask == 0).to(src.device)
 
-        output = self.transformer_encoder(src.transpose(0, 1), src_key_padding_mask=src_key_padding_mask)
+        output = self.transformer_encoder(
+            src.transpose(0, 1),
+            src_key_padding_mask=src_key_padding_mask)
         output = self.linear(output.mean(dim=0))
         return output
 
+
 class EnhancedAttentionTransformer(nn.Module):
-    def __init__(self, vocab_size, d_model=512, nhead=16, num_layers=6, dim_feedforward=2048):
+    def __init__(self, vocab_size, d_model=512, nhead=16, num_layers=6,
+                 dim_feedforward=2048):
         super(EnhancedAttentionTransformer, self).__init__()
         self.embedding = nn.Embedding(vocab_size, d_model)
         self.pos_encoder = PositionalEncoding(d_model)
-        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers)
+        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead,
+                                                    dim_feedforward)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layers,
+                                                         num_layers)
         self.d_model = d_model
         self.linear = nn.Linear(d_model, 2)
 
@@ -70,9 +74,12 @@ class EnhancedAttentionTransformer(nn.Module):
 
         src_key_padding_mask = (attention_mask == 0).to(src.device)
 
-        output = self.transformer_encoder(src.transpose(0, 1), src_key_padding_mask=src_key_padding_mask)
+        output = self.transformer_encoder(
+            src.transpose(0, 1),
+            src_key_padding_mask=src_key_padding_mask)
         output = self.linear(output.mean(dim=0))
         return output
+
 
 class DeepFeedForwardTransformer(nn.Module):
     def __init__(self, vocab_size, d_model=512, nhead=8, num_layers=6, dim_feedforward=2048):
@@ -81,7 +88,9 @@ class DeepFeedForwardTransformer(nn.Module):
         self.pos_encoder = PositionalEncoding(d_model)
         encoder_layers = []
         for _ in range(num_layers):
-            encoder_layers.append(nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward))
+            encoder_layers.append(nn.TransformerEncoderLayer(d_model,
+                                                             nhead,
+                                                             dim_feedforward))
             encoder_layers.append(nn.Sequential(
                 nn.LayerNorm(d_model),
                 nn.Linear(d_model, dim_feedforward),
@@ -117,6 +126,7 @@ class DeepFeedForwardTransformer(nn.Module):
         output = self.norm(output)
         output = self.linear(output.mean(dim=0))
         return output
+
 
 class RMSNormTransformer(nn.Module):
     def __init__(self, vocab_size, d_model=512, nhead=8, num_layers=6, dim_feedforward=2048):
