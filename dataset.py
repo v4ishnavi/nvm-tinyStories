@@ -30,9 +30,9 @@ def create_dataloader_from_file(
     dataset,
     max_seq_length,
     fraction_wanted,
-    vocab_threshold,
     train_batch_size,
     val_batch_size,
+    max_vocab_size,
     vocab_file=None,
 ):
     hf_dataset = load_dataset(dataset)
@@ -55,13 +55,14 @@ def create_dataloader_from_file(
 
         story = story.strip()
         story = nltk.word_tokenize(story)
-        story = ["<bos>"] + story + ["<eos>"]
+        # story = ["<bos>"] + story + ["<eos>"]
 
-        for word in story:
-            if word in word_count:
-                word_count[word] += 1
-            else:
-                word_count[word] = 1
+        if vocab_file is None:
+            for word in story:
+                if word in word_count:
+                    word_count[word] += 1
+                else:
+                    word_count[word] = 1
 
         train_stories.append(story)
 
@@ -75,34 +76,50 @@ def create_dataloader_from_file(
 
         story = story.strip()
         story = nltk.word_tokenize(story)
-        story = ["<bos>"] + story + ["<eos>"]
+        # story = ["<bos>"] + story + ["<eos>"]
 
-        for word in story:
-            if word in word_count:
-                word_count[word] += 1
-            else:
-                word_count[word] = 1
+        if vocab_file is None:
+            for word in story:
+                if word in word_count:
+                    word_count[word] += 1
+                else:
+                    word_count[word] = 1
 
         val_stories.append(story)
 
     if vocab_file is not None:
         with open(vocab_file, "rb") as f:
             vocab = pickle.load(f)
+            assert len(vocab) == max_vocab_size
+
     else:
-        vocab = {}
-        vocab["<bos>"] = len(vocab)
-        vocab["<eos>"] = len(vocab)
-        vocab["<pad>"] = len(vocab)
-        vocab["<unk>"] = len(vocab)
+        # sort word_count in descending order
+        word_count = dict(
+            sorted(word_count.items(), key=lambda item: item[1], reverse=True)
+        )
 
-        for data in [train_stories, val_stories]:
-            for story in data:
-                for word in story:
-                    if word_count[word] >= vocab_threshold and word not in vocab.keys():
-                        vocab[word] = len(vocab)
+        # select the top max_vocab_size words
+        top_words = list(word_count.keys())[: max_vocab_size - 4]
+        top_words = ["<bos>", "<eos>", "<pad>", "<unk>"] + top_words
+        vocab = {k: v for v, k in enumerate(top_words)}
 
-        with open("vocab.pkl", "wb") as f:
-            pickle.dump(vocab, f)
+        # print(vocab)
+
+    # else:
+    #     vocab = {}
+    #     vocab["<bos>"] = len(vocab)
+    #     vocab["<eos>"] = len(vocab)
+    #     vocab["<pad>"] = len(vocab)
+    #     vocab["<unk>"] = len(vocab)
+
+    #     for data in [train_stories, val_stories]:
+    #         for story in data:
+    #             for word in story:
+    #                 if word_count[word] >= vocab_threshold and word not in vocab.keys():
+    #                     vocab[word] = len(vocab)
+
+    #     with open("vocab.pkl", "wb") as f:
+    #         pickle.dump(vocab, f)
 
     idx2word = {idx: word for word, idx in vocab.items()}
 
@@ -113,30 +130,32 @@ def create_dataloader_from_file(
 
     for story in tqdm(train_stories, desc="Encoding train stories"):
         index_story = [vocab.get(word, vocab["<unk>"]) for word in story]
-        new_story = story[:max_seq_length]
+        new_story = story[: max_seq_length - 2]
+        # add bos eos
+        new_story = ["<bos>"] + new_story + ["<eos>"]
         new_story = new_story + ["<pad>"] * (max_seq_length - len(new_story))
 
-        if len(index_story) > max_seq_length:
-            index_story = index_story[:max_seq_length]
-        else:
-            index_story = index_story + [vocab["<pad>"]] * (
-                max_seq_length - len(index_story)
-            )
+        index_story = index_story[: max_seq_length - 2]
+        index_story = [vocab["<bos>"]] + index_story + [vocab["<eos>"]]
+        index_story = index_story + [vocab["<pad>"]] * (
+            max_seq_length - len(index_story)
+        )
 
         index_train_stories.append(index_story)
         padded_train_stories.append(new_story)
 
     for story in tqdm(val_stories, desc="Encoding val stories"):
         index_story = [vocab.get(word, vocab["<unk>"]) for word in story]
-        new_story = story[:max_seq_length]
+        new_story = story[: max_seq_length - 2]
+        # add bos eos
+        new_story = ["<bos>"] + new_story + ["<eos>"]
         new_story = new_story + ["<pad>"] * (max_seq_length - len(new_story))
 
-        if len(index_story) > max_seq_length:
-            index_story = index_story[:max_seq_length]
-        else:
-            index_story = index_story + [vocab["<pad>"]] * (
-                max_seq_length - len(index_story)
-            )
+        index_story = index_story[: max_seq_length - 2]
+        index_story = [vocab["<bos>"]] + index_story + [vocab["<eos>"]]
+        index_story = index_story + [vocab["<pad>"]] * (
+            max_seq_length - len(index_story)
+        )
 
         index_val_stories.append(index_story)
         padded_val_stories.append(new_story)
@@ -153,8 +172,19 @@ def create_dataloader_from_file(
 
 
 def main():
+
+#     def create_dataloader_from_file(
+#     dataset,
+#     max_seq_length,
+#     fraction_wanted,
+#     train_batch_size,
+#     val_batch_size,
+#     max_vocab_size,
+#     vocab_file=None,
+# ):
+
     train_dataloader, val_dataloader = create_dataloader_from_file(
-        "roneneldan/TinyStories", 512, 0.0005, 5, 64, 8
+        "roneneldan/TinyStories", 512, 0.0005, 64, 8, 1500,
     )
 
     for batch_idx, (x, y) in enumerate(train_dataloader):
