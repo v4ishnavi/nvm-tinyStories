@@ -24,7 +24,13 @@ class Small_Transformers_Dataset(Dataset):
 
 
 def create_dataloder_from_file(
-    dataset, max_seq_length, fraction_wanted, vocab_threshold, vocab_file=None
+    dataset,
+    max_seq_length,
+    fraction_wanted,
+    vocab_threshold,
+    train_batch_size,
+    val_batch_size,
+    vocab_file=None,
 ):
     hf_dataset = load_dataset(dataset)
 
@@ -136,16 +142,21 @@ def create_dataloder_from_file(
             padded_val_stories.append(new_story)
 
         train_dataset = Small_Transformers_Dataset(index_train_stories, vocab, idx2word)
-        train_dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True)
+        train_dataloader = DataLoader(
+            train_dataset, batch_size=train_batch_size, shuffle=True
+        )
 
         val_dataset = Small_Transformers_Dataset(index_val_stories, vocab, idx2word)
-        val_dataloader = DataLoader(val_dataset, batch_size=4, shuffle=True)
+        val_dataloader = DataLoader(
+            val_dataset, batch_size=val_batch_size, shuffle=False
+        )
 
         return train_dataloader, val_dataloader
 
+
 if __name__ == "__main__":
     train_dataloader, val_dataloader = create_dataloder_from_file(
-        "roneneldan/TinyStories", 512, 0.0005, 5
+        "roneneldan/TinyStories", 512, 0.0005, 5, 64, 8
     )
 
     for batch_idx, (x, y) in enumerate(train_dataloader):
