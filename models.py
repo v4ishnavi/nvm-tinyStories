@@ -37,8 +37,8 @@ class BasicTransformer(nn.Module):
         super(BasicTransformer, self).__init__()
         self.embedding = nn.Embedding(vocab_size, d_model)
         self.pos_encoder = PositionalEncoding(d_model)
-        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers)
+        decoder_layers = nn.TransformerDecoderLayer(d_model, nhead, dim_feedforward)
+        self.transformer_encoder = nn.TransformerDecoder(decoder_layers, num_layers)
         self.d_model = d_model
         self.linear = nn.Linear(d_model, 2)  # 2 for binary classification
 
@@ -48,7 +48,7 @@ class BasicTransformer(nn.Module):
 
         src_key_padding_mask = (attention_mask == 0).to(src.device)
 
-        output = self.transformer_encoder(
+        output = self.transformer_decoder(
             src.transpose(0, 1),
             src_key_padding_mask=src_key_padding_mask)
         output = self.linear(output.mean(dim=0))
