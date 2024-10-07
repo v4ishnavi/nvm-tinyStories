@@ -3,12 +3,9 @@ import argparse
 import random
 
 import torch
-import tqdm
+from tqdm import tqdm
 
-from models import (BasicTransformer,
-                    EnhancedAttentionTransformer,
-                    DeepFeedForwardTransformer,
-                    RMSNormTransformer)
+from models import BasicTransformer
 
 from dataset import create_dataloader_from_file
 
@@ -27,13 +24,14 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
     logging.info("Initialising the training process...")
 
     # TODO: Get vocab size and dataset. Assuming rn
-    vocab_threshold = 5000
-    train, validation = create_dataloader_from_file('roneneldan/TinyStories', 512, 0.0005, vocab_threshold, 16, 8)
+    vocab_threshold = 5
+    vocab_size, train, validation = create_dataloader_from_file('roneneldan/TinyStories', 256, 0.0005, vocab_threshold, 16, 8)
 
-    model = transformer_model(vocab_threshold)
+    model = transformer_model(vocab_size)
     model.to(device)
     optim = torch.optim.Adam(model.parameters(), lr=1e-5)
-    loss_fn = torch.nn.CrossEntropyLoss()
+    # NOTE: Padding token is 2 or now, can change later
+    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=2)
 
     logging.debug("Starting to train the model")
 
@@ -42,7 +40,10 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
     for epoch in range(num_epochs):
         model.train()
         training_batch_loss = 0
-        for batch in train:
+
+        pbar = tqdm(train)
+
+        for batch in pbar:
             src, tgt = batch
 
             src = src.to(device)
@@ -50,15 +51,17 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
             logging.debug(f"Moved src and tgt to {device}")
 
             optim.zero_grad()
-            # NOTE: Padding token is 2 or now, can change later
-            output = model(src, src == 2)
-            loss = loss_fn(output, tgt, ignore_indexes=2)
+            output = model(src, (src == 2).float())
+            logging.debug(f"output shape: {output.shape}")
+            logging.debug(f"tgt shape: {tgt.shape}")
+            loss = loss_fn(output.transpose(-1, -2), tgt)
             loss.backward()
             optim.step()
 
             training_batch_loss += loss.item()
             training_batch_losses.append(loss.item())
             # NOTE: find a way to show per batch loss with tqdm
+            pbar.set_description(f"Batch loss: {loss.item()}")
 
         model.eval()
         validation_batch_loss = 0
@@ -68,16 +71,17 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
             src = src.to(device)
             tgt = tgt.to(device)
 
-            # TODO: ensure that attn mask is correct!
-            output = model(src, src == 0)
+            # NOTE: Padding token is 2 or now, can change later
+            output = model(src, src == 2)
             loss = loss_fn(output, tgt)
 
             validation_batch_loss += loss.item()
             validation_batch_losses.append(loss.item())
-            # NOTE: This could blow up very quickly, make sure that this
-            # is fixed soon so that we dont have 4295498GB of artifacts
-            # Ideally: save like 5 or smth in total
-            torch.save(model.state_dict(), model_save_path + f".tmp.{epoch}")
+
+        # NOTE: This could blow up very quickly, make sure that this
+        # is fixed soon so that we dont have 4295498GB of artifacts
+        # Ideally: save like 5 or smth in total
+        torch.save(model.state_dict(), model_save_path + f".tmp.{epoch}")
         validation_losses.append(validation_batch_loss)
         training_losses.append(training_batch_loss)
 
@@ -92,10 +96,7 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
 
 if __name__ == '__main__':
     avail_models = {
-        'basic': BasicTransformer,
-        'enhanced-attention': EnhancedAttentionTransformer,
-        'deep-ff': DeepFeedForwardTransformer,
-        'rmsnorm': RMSNormTransformer
+        'basic': BasicTransformer
     }
 
     # Create the parser
@@ -140,4 +141,4 @@ if __name__ == '__main__':
 
     model = avail_models[args.model]
 
-    train(model, model_save_path = args.model_path)
+    train(model, model_save_path=args.model_path)

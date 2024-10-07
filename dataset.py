@@ -149,12 +149,12 @@ def create_dataloader_from_file(
     val_dataset = Small_Transformers_Dataset(index_val_stories, vocab, idx2word)
     val_dataloader = DataLoader(val_dataset, batch_size=val_batch_size, shuffle=False)
 
-    return train_dataloader, val_dataloader
+    return len(vocab), train_dataloader, val_dataloader
 
 
 def main():
     train_dataloader, val_dataloader = create_dataloader_from_file(
-        "roneneldan/TinyStories", 512, 0.0005, 5, 64, 8
+        "roneneldan/TinyStories", 256, 0.0005, 5, 64, 8
     )
 
     for batch_idx, (x, y) in enumerate(train_dataloader):

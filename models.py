@@ -1,8 +1,9 @@
+import logging
+
 import torch
 import torch.nn as nn
 import torch.nn.init as init
 import math
-
 
 # Positional Encoding
 class PositionalEncoding(nn.Module):
@@ -33,27 +34,42 @@ class RMSNorm(nn.Module):
 
 
 class BasicTransformer(nn.Module):
-    def __init__(self, vocab_size = 5000, d_model=512, nhead=8, num_layers=6, dim_feedforward=2048):
+    def __init__(self,
+                 vocab_size,
+                 d_model=512,
+                 nhead=8,
+                 num_encoder_layers=6,
+                 num_decoder_layers=6,
+                 dim_feedforward=2048):
+
         super(BasicTransformer, self).__init__()
         self.embedding = nn.Embedding(vocab_size, d_model)
         self.pos_encoder = PositionalEncoding(d_model)
-        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers)
+
+        encoder_layer = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward, batch_first=True)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_encoder_layers)
+
         self.d_model = d_model
         self.linear = nn.Linear(d_model, vocab_size)
 
-    def forward(self, src, attention_mask):
+        # Generation tasks end with linear to generate logits. This can be then
+        # passed into softmax to actually generate probabilities
+
+    def forward(self, src, src_padding_mask):
         src = self.embedding(src) * math.sqrt(self.d_model)
+
         src = self.pos_encoder(src)
+        src_attn_mask = nn.Transformer.generate_square_subsequent_mask(src.size(1)).to(src.device)
 
-        src_key_padding_mask = (attention_mask == 0).to(src.device)
-        # causal mask 
-        
+        logging.debug(f"src: {src.shape}")
+        logging.debug(f"src attn mask: {src_attn_mask.shape}")
+        logging.debug(f"src padding mask: {src_padding_mask.shape}")
 
-        output = self.transformer_encoder(src.transpose(0, 1), src_key_padding_mask=src_key_padding_mask)
-        output = self.linear(output.mean(dim=0))
+        output = self.transformer_encoder(src,
+                                          mask=src_attn_mask,
+                                          src_key_padding_mask=src_padding_mask)
+        output = self.linear(output)
         return output
-
 
 
 # class EnhancedAttentionTransformer(nn.Module):
