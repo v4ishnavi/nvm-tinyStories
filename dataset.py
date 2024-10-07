@@ -1,131 +1,180 @@
-import argparse
 import logging
+import argparse
+import pickle
 import re
-from collections import Counter
-import json
 
 import torch
-from torch.utils.data import Dataset, DataLoader
+import nltk
 from datasets import load_dataset
+from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
-class Vocab:
-    def __init__(self, vocab_file):
-        with open(vocab_file, "r") as f:
-            vocab = json.load(f)
 
-        words = list(vocab.keys())  # List of words
-        self.word2idx = {word: idx for idx, word in enumerate(words)}
-        self.idx2word = {idx: word for idx, word in enumerate(words)}
-        self.vocab_size = len(words)
-
-    def encode(self, text):
-        words = re.findall(r'\b[a-z]+\b', text.lower())
-        return [self.word2idx[word] for word in words if word in self.word2idx]
-
-    def decode(self, tokens):
-        return " ".join([self.idx2word[token] for token in tokens
-                         if token in self.idx2word])
-
-
-class TokenizedDataset(Dataset):
-    def __init__(self, tokens, block_size):
-        self.tokens = tokens  # Concatenated list of tokens
-        self.block_size = block_size
+class Small_Transformers_Dataset(Dataset):
+    def __init__(self, index_stories, vocab, idx2word):
+        self.index_stories = index_stories
+        self.vocab = vocab
+        self.idx2word = idx2word
 
     def __len__(self):
-        # Total number of sequences
-        return (len(self.tokens) - self.block_size) // self.block_size
+        return len(self.index_stories)
 
     def __getitem__(self, idx):
-        start_idx = idx * self.block_size
-        end_idx = start_idx + self.block_size + 1  # +1 for target
-        x = self.tokens[start_idx:start_idx + self.block_size]  # Context
-        y = self.tokens[start_idx + 1:end_idx]  # Target
+        story = self.index_stories[idx]
+        story_shifted = story[1:] + [self.vocab["<pad>"]]
 
-        # Convert to tensors
-        x_tensor = torch.tensor(x, dtype=torch.long)
-        y_tensor = torch.tensor(y, dtype=torch.long)
-        return x_tensor, y_tensor
+        return torch.tensor(story), torch.tensor(story_shifted)
 
 
-# reduces vocabulary by converting all text to lower case and keeping only
-# letters.
-def create_reduced_vocab_and_save(ds, vocab_size_limit=5000, output_file="vocab.json"):
-    word_counter = Counter()
+def create_dataloader_from_file(
+    dataset,
+    max_seq_length,
+    fraction_wanted,
+    vocab_threshold,
+    train_batch_size,
+    val_batch_size,
+    vocab_file=None,
+):
+    hf_dataset = load_dataset(dataset)
 
-    def process_text(text):
-        words = re.findall(r'\b[a-z]+\b', text.lower())
-        word_counter.update(words)
+    train_data = hf_dataset["train"]
+    val_data = hf_dataset["validation"]
 
-    for split in ['train', 'validation']:
-        for item in tqdm(ds[split]):
-            process_text(item['text'])
+    train_stories = []
+    val_stories = []
 
-    most_common_words = dict(word_counter.most_common(vocab_size_limit))
-    with open(output_file, "w") as f:
-        json.dump(most_common_words, f, indent=4)
+    word_count = {}
 
-    logging.info(f"Vocabulary saved to {output_file}")
+    for i in tqdm(
+        range(int(fraction_wanted * len(train_data))), desc="Processing train data"
+    ):
+        story = train_data[i]["text"]
+        story = story.lower()
+        story = re.sub(r"[^a-zA-Z\s]", " ", story)
+        story = re.sub(r"\s+", " ", story)
+
+        story = story.strip()
+        story = nltk.word_tokenize(story)
+        story = ["<bos>"] + story + ["<eos>"]
+
+        for word in story:
+            if word in word_count:
+                word_count[word] += 1
+            else:
+                word_count[word] = 1
+
+        train_stories.append(story)
+
+        for i in tqdm(
+            range(int(fraction_wanted * len(val_data))), desc="Processing val data"
+        ):
+            story = val_data[i]["text"]
+            story = story.lower()
+            story = re.sub(r"[^a-zA-Z\s]", " ", story)
+            story = re.sub(r"\s+", " ", story)
+
+            story = story.strip()
+            story = nltk.word_tokenize(story)
+            story = ["<bos>"] + story + ["<eos>"]
+
+            for word in story:
+                if word in word_count:
+                    word_count[word] += 1
+                else:
+                    word_count[word] = 1
+
+            val_stories.append(story)
+
+        if vocab_file is not None:
+            with open(vocab_file, "rb") as f:
+                vocab = pickle.load(f)
+        else:
+            vocab = {}
+            vocab["<bos>"] = len(vocab)
+            vocab["<eos>"] = len(vocab)
+            vocab["<pad>"] = len(vocab)
+            vocab["<unk>"] = len(vocab)
+
+            for data in [train_stories, val_stories]:
+                for story in data:
+                    for word in story:
+                        if (
+                            word_count[word] >= vocab_threshold
+                            and word not in vocab.keys()
+                        ):
+                            vocab[word] = len(vocab)
+
+            with open("vocab.pkl", "wb") as f:
+                pickle.dump(vocab, f)
+
+        idx2word = {idx: word for word, idx in vocab.items()}
+
+        index_train_stories = []
+        padded_train_stories = []
+        index_val_stories = []
+        padded_val_stories = []
+
+        for story in tqdm(train_stories, desc="Encoding train stories"):
+            index_story = [vocab.get(word, vocab["<unk>"]) for word in story]
+            new_story = story[:max_seq_length]
+            new_story = new_story + ["<pad>"] * (max_seq_length - len(new_story))
+
+            if len(index_story) > max_seq_length:
+                index_story = index_story[:max_seq_length]
+            else:
+                index_story = index_story + [vocab["<pad>"]] * (
+                    max_seq_length - len(index_story)
+                )
+
+            index_train_stories.append(index_story)
+            padded_train_stories.append(new_story)
+
+        for story in tqdm(val_stories, desc="Encoding val stories"):
+            index_story = [vocab.get(word, vocab["<unk>"]) for word in story]
+            new_story = story[:max_seq_length]
+            new_story = new_story + ["<pad>"] * (max_seq_length - len(new_story))
+
+            if len(index_story) > max_seq_length:
+                index_story = index_story[:max_seq_length]
+            else:
+                index_story = index_story + [vocab["<pad>"]] * (
+                    max_seq_length - len(index_story)
+                )
+
+            index_val_stories.append(index_story)
+            padded_val_stories.append(new_story)
+
+        train_dataset = Small_Transformers_Dataset(index_train_stories, vocab, idx2word)
+        train_dataloader = DataLoader(
+            train_dataset, batch_size=train_batch_size, shuffle=False
+        )
+
+        val_dataset = Small_Transformers_Dataset(index_val_stories, vocab, idx2word)
+        val_dataloader = DataLoader(
+            val_dataset, batch_size=val_batch_size, shuffle=False
+        )
+
+        return train_dataloader, val_dataloader
 
 
-# Tokenize the dataset
-def tokenize_dataset(ds, vocab):
-    def tokenize_item(item):
-        item['tokens'] = vocab.encode(item['text'])  # Store under 'tokens'
-        return item
+def main():
+    train_dataloader, val_dataloader = create_dataloder_from_file(
+        "roneneldan/TinyStories", 512, 0.0005, 5, 64, 8
+    )
 
-    # Apply tokenization to all items in the dataset
-    tokenized_ds = ds.map(tokenize_item, batched=False, load_from_cache_file=False)
-    return tokenized_ds
-
-
-# Concatenate all tokens into one long list
-def concatenate_tokens(tokenized_ds):
-    all_tokens = []
-    for split in ['train', 'validation']:
-        for item in tokenized_ds[split]:
-            all_tokens.extend(item['tokens'])
-    return all_tokens
-
-
-# Create the DataLoader
-def create_dataloader(tokens, block_size=128, batch_size=4):
-    dataset = TokenizedDataset(tokens, block_size)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-    return dataloader
-
-
-def main(vocab_size_limit, vocab_file):
-    # Load the TinyStories dataset
-    ds = load_dataset("roneneldan/TinyStories")
-
-    logging.debug("Structure of the dataset:")
-    logging.debug(ds)
-
-    create_reduced_vocab_and_save(ds, vocab_size_limit, vocab_file)
-
-    vocab = Vocab(vocab_file)
-
-    tokenized_ds = tokenize_dataset(ds, vocab)
-    all_tokens = concatenate_tokens(tokenized_ds)
-
-    logging.info("Creating a dataloader")
-    block_size = 64  # Length of sequences
-    batch_size = 32
-    dataloader = create_dataloader(all_tokens, block_size=block_size, batch_size=batch_size)
-
-    for batch_idx, (x, y) in enumerate(dataloader):
-        logging.debug(f"Batch {batch_idx + 1}: x shape {x.shape}, y shape {y.shape}")
-        if batch_idx == 0:
-            logging.debug(f"x[0]: {x[0]}")
-            logging.debug(f"y[0]: {y[0]}")
+    for batch_idx, (x, y) in enumerate(train_dataloader):
+        print(x)
+        print(y)
+        break
+    for batch_idx, (x, y) in enumerate(val_dataloader):
+        print(x)
+        print(y)
         break
 
 
 if __name__ == '__main__':
     # Create the parser
-    parser = argparse.ArgumentParser(description="Train a transformer")
+    parser = argparse.ArgumentParser(description="Setup the dataset")
 
     # Allow for logging support throughout the app
     parser.add_argument(
@@ -151,16 +200,10 @@ if __name__ == '__main__':
         help="Location of vocabulary file",
         action="store", dest="vocab_output", default="artifacts/vocab.json"
     )
-
-    parser.add_argument(
-        '--vocab-size',
-        help="Maximum size of vocabulary",
-        action="store", dest="vocab_size", default="10000", type=int
-    )
-
+    
     # Parse the arguments
     args = parser.parse_args()
 
     logging.basicConfig(level=args.loglevel)
 
-    main(args.vocab_size, args.vocab_output)
+    main()
