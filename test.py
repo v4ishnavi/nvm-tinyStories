@@ -35,7 +35,7 @@ def parse_args():
     parser.add_argument(
         '-vocab', '--vocab-path', 
         help="Path to the vocab file", 
-        default="artifacts/vocab.json"
+        default="artifacts/vocab.pkl"
     )
     parser.add_argument(
         '--max-len', 
@@ -87,19 +87,15 @@ def load_model_and_vocab(model_path, vocab_path):
     return model, device, idx2word, word2idx
 
 def decode_sentence(tokens, idx2word):
-    logging.debug(f"Decoding tokens: {tokens}")
     sentence = ' '.join([idx2word[token] for token in tokens if token in idx2word])
-    logging.debug(f"Decoded sentence: {sentence}")
     return sentence
 
 def generate_sentence(model, input_seq, word2idx, device, max_len=50):
-    logging.info(f"Generating sentence with max length {max_len}...")
     model.eval()
     input_tensor = torch.tensor([input_seq], device=device)
 
     for step in range(max_len):
         with torch.no_grad():
-            logging.debug(f"Generating token at step {step + 1}/{max_len}...")
             output = model(input_tensor, input_tensor) 
             output_token_logits = output[:, -1, :] 
             next_token_probs = F.softmax(output_token_logits, dim=-1)
@@ -109,7 +105,6 @@ def generate_sentence(model, input_seq, word2idx, device, max_len=50):
         input_tensor = torch.tensor([input_seq], device=device)
 
         if next_token == word2idx.get("<eos>"):
-            logging.info(f"Generated <eos> token at step {step + 1}, stopping generation.")
             break
 
     return input_seq
@@ -120,31 +115,33 @@ def main():
     logging.basicConfig(level=args.loglevel)
     
     if args.seed:
-        logging.info(f"Setting random seed to {args.seed}")
         torch.manual_seed(args.seed)
 
     model, device, idx2word, word2idx = load_model_and_vocab(args.model_path, args.vocab_path)
     
-    logging.info(f"Loading validation dataset with limit of {args.val_limit} sentences...")
     _, val_loader = create_dataloader_from_file("roneneldan/TinyStories", 512, 0.0005, 5000, 16, 8)
 
     completed_sentences = []
     for i, (src, tgt) in enumerate(val_loader):
         if i >= args.val_limit:
-            logging.info(f"Reached the limit of {args.val_limit} sentences, stopping.")
             break
 
         for sentence in src:
             input_sentence = sentence.tolist()
-            logging.debug(f"Input sentence tokens: {input_sentence[:10]}")
-            
-            completed_sentence_tokens = generate_sentence(model, input_sentence[:10], word2idx, device, max_len=args.max_len)
-            completed_sentence = decode_sentence(completed_sentence_tokens, idx2word)
-            
-            logging.debug(f"Completed sentence: {completed_sentence}")
-            completed_sentences.append(completed_sentence)
+            # Split the sentence at len/2 for prompt
+            half_len = len(input_sentence) // 2
+            prompt_tokens = input_sentence[:half_len]
+            prompt = decode_sentence(prompt_tokens, idx2word)
 
-    logging.info(f"Saving completed sentences to {args.output_file}...")
+            # Generate the rest of the sentence
+            completed_sentence_tokens = generate_sentence(model, prompt_tokens, word2idx, device, max_len=args.max_len)
+            generated_sentence = decode_sentence(completed_sentence_tokens[half_len:], idx2word)
+
+            # Format the result as prompt *** generated_sentence (paper follows this syntax)
+            completed_sentences.append({
+                "story": f"{prompt} *** {generated_sentence}"
+            })
+
     with open(args.output_file, "w") as outfile:
         json.dump(completed_sentences, outfile, indent=4)
 
