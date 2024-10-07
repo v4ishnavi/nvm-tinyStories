@@ -47,7 +47,6 @@ async def evaluate_sentence(sentence):
     logging.debug(f"Evaluating sentence: {sentence.strip()}")
     prompt = evaluation_prompt_template.format(sentence.strip())
 
-    # Send the prompt to the GPT model
     response = await client.chat.completions.create(
         model=MODEL,
         messages=[{"role": "system", "content": prompt}]
@@ -74,16 +73,12 @@ def parse_evaluation(evaluation_text):
     consistency = int(consistency_match.group(1)) if consistency_match else None
     grammar = int(grammar_match.group(1)) if grammar_match else None
     creativity = int(creativity_match.group(1)) if creativity_match else None
-
-    # Loosen the regex for age group detection
-    # The pattern now searches for both 'Age group: E' or similar and descriptions like 'Age group: 10-12'
     age_group_match = re.search(r'[Aa]ge group:.*?([A-E]|[0-9]+[-]?[0-9]*)', evaluation_text)
     
     if age_group_match:
         # print("age found")
         age_group = age_group_match.group(1)
-        # Convert numeric range into letter grade
-        if '-' in age_group:  # Handle cases where it returns numeric ranges
+        if '-' in age_group: 
             if '10' in age_group or '12' in age_group:
                 age_group = 'E'
             elif '8' in age_group or '9' in age_group:
@@ -95,7 +90,7 @@ def parse_evaluation(evaluation_text):
             else:
                 age_group = 'A'
     else:
-        age_group = None  # In case the age group isn't detected at all
+        age_group = None  
 
     return consistency, grammar, creativity, age_group
 
