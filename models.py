@@ -37,10 +37,10 @@ class BasicTransformer(nn.Module):
         super(BasicTransformer, self).__init__()
         self.embedding = nn.Embedding(vocab_size, d_model)
         self.pos_encoder = PositionalEncoding(d_model)
-        decoder_layers = nn.TransformerDecoderLayer(d_model, nhead, dim_feedforward)
-        self.transformer_encoder = nn.TransformerDecoder(decoder_layers, num_layers)
+        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers)
         self.d_model = d_model
-        self.linear = nn.Linear(d_model, 2)  # 2 for binary classification
+        self.linear = nn.Linear(d_model, vocab_size)
 
     def forward(self, src, attention_mask):
         src = self.embedding(src) * math.sqrt(self.d_model)
@@ -50,7 +50,7 @@ class BasicTransformer(nn.Module):
 
         output = self.transformer_decoder(
             src.transpose(0, 1),
-            src_key_padding_mask=src_key_padding_mask)
+            tgt_key_padding_mask=src_key_padding_mask, is_causal=True)
         output = self.linear(output.mean(dim=0))
         return output
 
