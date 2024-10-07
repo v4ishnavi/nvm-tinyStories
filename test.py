@@ -35,7 +35,7 @@ def parse_args():
     parser.add_argument(
         '-vocab', '--vocab-path', 
         help="Path to the vocab file", 
-        default="artifacts/vocab.pkl"
+        default="artifacts/vocab.json"
     )
     parser.add_argument(
         '--max-len', 
