@@ -3,3 +3,5 @@ artifacts/**/*
 venv/**/*
 
 vocab.pkl
+
+.env
