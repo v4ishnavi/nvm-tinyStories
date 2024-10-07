@@ -10,6 +10,7 @@ from models import (BasicTransformer,
                     DeepFeedForwardTransformer,
                     RMSNormTransformer)
 
+from dataset import create_dataloader_from_file
 
 DEFAULT_SEED = 42
 
@@ -26,12 +27,10 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
     logging.info("Initialising the training process...")
 
     # TODO: Get vocab size and dataset. Assuming rn
-    vocab_size = 1500  # <------------- Fill in
-    train_dataset = None # <----------- Fill in
-    validation_dataset = None # <------ Fill in
-    logging.error("vocab_size/dataset not defined! make sure to define before running")
+    vocab_threshold = 5000
+    train, validation = create_dataloader_from_file('roneneldan/TinyStories', 512, 0.0005, vocab_threshold, 16, 8)
 
-    model = transformer_model(vocab_size)
+    model = transformer_model(vocab_threshold)
     model.to(device)
     optim = torch.optim.Adam(model.parameters(), lr=1e-5)
     loss_fn = torch.nn.CrossEntropyLoss()
@@ -43,7 +42,7 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
     for epoch in range(num_epochs):
         model.train()
         training_batch_loss = 0
-        for batch in tqdm(train_dataset):
+        for batch in train:
             src, tgt = batch
 
             src = src.to(device)
@@ -51,9 +50,9 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
             logging.debug(f"Moved src and tgt to {device}")
 
             optim.zero_grad()
-            # TODO: Ensure that attention mask is correct!
-            output = model(src, src == 0)
-            loss = loss_fn(output, tgt)
+            # NOTE: Padding token is 2 or now, can change later
+            output = model(src, src == 2)
+            loss = loss_fn(output, tgt, ignore_indexes=2)
             loss.backward()
             optim.step()
 
@@ -63,7 +62,7 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
 
         model.eval()
         validation_batch_loss = 0
-        for batch in tqdm(validation_dataset):
+        for batch in validation:
             src, tgt = batch
 
             src = src.to(device)
@@ -128,7 +127,7 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
-        '-s', '--model-save-path',
+        '-p', '--model-save-path',
         help="Choose where is the model saved",
         action='store', dest='model_path', default='artifacts/model.pt'
     )

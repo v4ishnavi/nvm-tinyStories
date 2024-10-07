@@ -26,7 +26,7 @@ class Small_Transformers_Dataset(Dataset):
         return torch.tensor(story), torch.tensor(story_shifted)
 
 
-def create_dataloder_from_file(
+def create_dataloader_from_file(
     dataset,
     max_seq_length,
     fraction_wanted,
