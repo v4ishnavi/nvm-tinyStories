@@ -33,46 +33,25 @@ class RMSNorm(nn.Module):
 
 
 class BasicTransformer(nn.Module):
-    def __init__(self, 
-                vocab_size, 
-                d_model=512, 
-                nhead=8, 
-                num_encoder_layers=6, 
-                num_decoder_layers=6, 
-                dim_feedforward=2048):
-
+    def __init__(self, vocab_size = 5000, d_model=512, nhead=8, num_layers=6, dim_feedforward=2048):
         super(BasicTransformer, self).__init__()
-
         self.embedding = nn.Embedding(vocab_size, d_model)
-
-        # self.pos_encoder = PositionalEncoding(d_model)
         self.pos_encoder = PositionalEncoding(d_model)
-
-        # encoder_layer = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward)
-        # self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_encoder_layers)
-
-        decoder_layer = nn.TransformerDecoderLayer(d_model, nhead, dim_feedforward)
-        self.transformer_decoder = nn.TransformerDecoder(decoder_layer, num_decoder_layers)
-
+        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers)
         self.d_model = d_model
-        self.linear = nn.Linear(d_model, vocab_size) 
-        #generation tasks end with linear layer.. use crossentropy loss since no softmax
+        self.linear = nn.Linear(d_model, vocab_size)
 
-    def forward(self, src, tgt):
+    def forward(self, src, attention_mask):
         src = self.embedding(src) * math.sqrt(self.d_model)
-        tgt = self.embedding(tgt) * math.sqrt(self.d_model)
-
         src = self.pos_encoder(src)
-        tgt = self.pos_encoder(tgt)
-        tgt_mask = nn.Transformer.generate_square_subsequent_mask(tgt.size(1)).to(src.device)
-        
-        #src -> (batch_size, seq_len, d_model) -> (seq_len, batch_size, d_model)
-        #tgt -> (batch_size, seq_len, d_model) -> (seq_len, batch_size, d_model)
 
-        # here src and tgt are the same: output = model(input, input[:,:-1]) (remove last token from target -> predict that) 
-        # tgt_mask: mask out future tokens in target sequence
-        output = self.transformer_decoder(tgt.transpose(0, 1), src.transpose(0, 1), tgt_mask=tgt_mask)
-        output = self.linear(output.transpose(0, 1))
+        src_key_padding_mask = (attention_mask == 0).to(src.device)
+        # causal mask 
+        
+
+        output = self.transformer_encoder(src.transpose(0, 1), src_key_padding_mask=src_key_padding_mask)
+        output = self.linear(output.mean(dim=0))
         return output
 
 
