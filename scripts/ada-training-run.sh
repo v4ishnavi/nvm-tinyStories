@@ -6,6 +6,7 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --job-name=train-transformer
 #SBATCH -o .sbatch-training-logs.out.%j
+#SBATCH --time=1-00:00:00
 #SBATCH --gpus=1
 #SBATCH --mem=16GB
 
@@ -29,4 +30,4 @@ cat requirements.txt | xargs uv add
 
 # Runs the actual Python file
 echo "starting training..."
-python3 train.py -v
+python3 train.py -v --model-checkpoint-load artifacts/model.pt.checkpoint

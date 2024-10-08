@@ -17,7 +17,8 @@ def __init_randomness__(seed=DEFAULT_SEED):
     random.seed(seed)
 
 
-def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='artifacts/model.pt'):
+def train(transformer_model=BasicTransformer, num_epochs=4, model_save_path='artifacts/model.pt',
+          load_model_checkpoint=None):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     logging.info(f"Training on {device}")
 
@@ -25,9 +26,13 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
 
     # TODO: Get vocab size and dataset. Assuming rn
     vocab_size = 5000
-    train, validation = create_dataloader_from_file('roneneldan/TinyStories', 512, 0.05, 16, 8, vocab_size)
+    train, validation = create_dataloader_from_file('roneneldan/TinyStories', 512, 0.05, 32, 8, vocab_size)
 
     model = transformer_model(vocab_size)
+
+    if load_model_checkpoint is not None:
+        model.load_state_dict(torch.load(load_model_checkpoint, map_location=device))
+
     model.to(device)
     optim = torch.optim.Adam(model.parameters(), lr=1e-5)
     # NOTE: Padding token is 2 or now, can change later
@@ -86,11 +91,11 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
         validation_losses.append(validation_batch_loss)
         training_losses.append(training_batch_loss)
 
-    print(f"Training Losses: {training_losses}")
-    print(f"Validation Losses: {validation_losses}")
+        print(f"Training Losses: {training_losses}")
+        print(f"Validation Losses: {validation_losses}")
 
-    print(f"Training Batch Losses: {training_batch_losses}")
-    print(f"Validation Batch Losses: {validation_batch_losses}")
+        print(f"Training Batch Losses: {training_batch_losses}")
+        print(f"Validation Batch Losses: {validation_batch_losses}")
 
     torch.save(model.state_dict(), model_save_path)
 
@@ -133,6 +138,12 @@ if __name__ == '__main__':
         action='store', dest='model_path', default='artifacts/model.pt'
     )
 
+    parser.add_argument(
+        '-l', '--model-checkpoint-load',
+        help='Load model from checkpoint',
+        action='store', dest='checkpoint', default=None
+    )
+
     # Parse the arguments
     args = parser.parse_args()
 
@@ -141,4 +152,4 @@ if __name__ == '__main__':
 
     model = avail_models[args.model]
 
-    train(model, model_save_path=args.model_path)
+    train(model, model_save_path=args.model_path, load_model_checkpoint=args.checkpoint)
