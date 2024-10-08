@@ -14,7 +14,7 @@ USERNAME="monish"
 
 # Ensures that all files, excluding the venv and artifacts, are synced
 # with Ada.
-rsync -chavzP --stats ../ ada:/home/$USERNAME/$REMOTE_PATH --exclude "venv" --exclude "artifacts"
+rsync -chavzP --stats ./ ada:/home2/$USERNAME/$REMOTE_PATH --exclude "venv" --exclude "artifacts" --exclude '.git' --exclude '__pycache__'
 
 case "$1" in
     -s) ssh -t ada 'cd ~/anlp/$REMOTE_PATH; zsh -l'

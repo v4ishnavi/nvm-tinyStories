@@ -90,7 +90,7 @@ def create_dataloader_from_file(
     if vocab_file is not None:
         with open(vocab_file, "rb") as f:
             vocab = pickle.load(f)
-            assert len(vocab) == max_vocab_size
+            assert len(vocab) <= max_vocab_size
 
     else:
         # sort word_count in descending order
@@ -103,23 +103,8 @@ def create_dataloader_from_file(
         top_words = ["<bos>", "<eos>", "<pad>", "<unk>"] + top_words
         vocab = {k: v for v, k in enumerate(top_words)}
 
-        # print(vocab)
-
-    # else:
-    #     vocab = {}
-    #     vocab["<bos>"] = len(vocab)
-    #     vocab["<eos>"] = len(vocab)
-    #     vocab["<pad>"] = len(vocab)
-    #     vocab["<unk>"] = len(vocab)
-
-    #     for data in [train_stories, val_stories]:
-    #         for story in data:
-    #             for word in story:
-    #                 if word_count[word] >= vocab_threshold and word not in vocab.keys():
-    #                     vocab[word] = len(vocab)
-
-    #     with open("vocab.pkl", "wb") as f:
-    #         pickle.dump(vocab, f)
+        with open("artifacts/vocab.pkl", "wb") as f:
+            pickle.dump(vocab, f)
 
     idx2word = {idx: word for word, idx in vocab.items()}
 
@@ -168,7 +153,7 @@ def create_dataloader_from_file(
     val_dataset = Small_Transformers_Dataset(index_val_stories, vocab, idx2word)
     val_dataloader = DataLoader(val_dataset, batch_size=val_batch_size, shuffle=False)
 
-    return len(vocab), train_dataloader, val_dataloader
+    return train_dataloader, val_dataloader
 
 
 def main():
@@ -222,7 +207,7 @@ if __name__ == "__main__":
         help="Location of vocabulary file",
         action="store",
         dest="vocab_output",
-        default="artifacts/vocab.json",
+        default="artifacts/vocab.pkl",
     )
 
     # Parse the arguments

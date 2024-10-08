@@ -24,8 +24,8 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
     logging.info("Initialising the training process...")
 
     # TODO: Get vocab size and dataset. Assuming rn
-    vocab_threshold = 5
-    vocab_size, train, validation = create_dataloader_from_file('roneneldan/TinyStories', 256, 0.0005, vocab_threshold, 16, 8)
+    vocab_size = 5000
+    train, validation = create_dataloader_from_file('roneneldan/TinyStories', 512, 0.05, 16, 8, vocab_size)
 
     model = transformer_model(vocab_size)
     model.to(device)
@@ -41,9 +41,10 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
         model.train()
         training_batch_loss = 0
 
-        pbar = tqdm(train)
+        train_pbar = tqdm(train)
+        valid_pbar = tqdm(validation)
 
-        for batch in pbar:
+        for batch in train_pbar:
             src, tgt = batch
 
             src = src.to(device)
@@ -61,11 +62,11 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
             training_batch_loss += loss.item()
             training_batch_losses.append(loss.item())
             # NOTE: find a way to show per batch loss with tqdm
-            pbar.set_description(f"Batch loss: {loss.item()}")
+            train_pbar.set_description(f"Epoch: {epoch} | Batch loss: {loss.item()}")
 
         model.eval()
         validation_batch_loss = 0
-        for batch in validation:
+        for batch in valid_pbar:
             src, tgt = batch
 
             src = src.to(device)
@@ -73,19 +74,17 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
 
             # NOTE: Padding token is 2 or now, can change later
             output = model(src, src == 2)
-            loss = loss_fn(output, tgt)
+            loss = loss_fn(output.transpose(-1, -2), tgt)
 
             validation_batch_loss += loss.item()
             validation_batch_losses.append(loss.item())
-
+            valid_pbar.set_description(f"Epoch: {epoch} | Valid Batch loss: {loss.item()}")
         # NOTE: This could blow up very quickly, make sure that this
         # is fixed soon so that we dont have 4295498GB of artifacts
-        # Ideally: save like 5 or smth in total
+        # Ideally: save like 5 or smth in total        
         torch.save(model.state_dict(), model_save_path + f".tmp.{epoch}")
         validation_losses.append(validation_batch_loss)
         training_losses.append(training_batch_loss)
-
-    torch.save(model.state_dict(), model_save_path)
 
     print(f"Training Losses: {training_losses}")
     print(f"Validation Losses: {validation_losses}")
@@ -93,6 +92,7 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
     print(f"Training Batch Losses: {training_batch_losses}")
     print(f"Validation Batch Losses: {validation_batch_losses}")
 
+    torch.save(model.state_dict(), model_save_path)
 
 if __name__ == '__main__':
     avail_models = {
