@@ -9,6 +9,8 @@
 #SBATCH --time=1-00:00:00
 #SBATCH --gpus=1
 #SBATCH --mem=16GB
+#SBATCH --mail-type=end          # send email when job ends
+#SBATCH --mail-user=monish.singhal@research.iiit.ac.in
 
 # Starts a training run using Ada + SLURM. This allows you to run
 # without having to create interactive sessions (that have several
@@ -30,4 +32,4 @@ cat requirements.txt | xargs uv add
 
 # Runs the actual Python file
 echo "starting training..."
-python3 train.py -v --model-checkpoint-load artifacts/model.pt.checkpoint
+python3 train.py -v -dp
