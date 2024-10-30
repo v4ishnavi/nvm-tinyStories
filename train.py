@@ -17,8 +17,8 @@ def __init_randomness__(seed=DEFAULT_SEED):
     random.seed(seed)
 
 
-def train(transformer_model=BasicTransformer, num_epochs=4, model_save_path='artifacts/model.pt',
-          load_model_checkpoint=None):
+def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='artifacts/model.pt',
+          load_model_checkpoint=None, disable_progress_bars=False):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     logging.info(f"Training on {device}")
 
@@ -38,7 +38,7 @@ def train(transformer_model=BasicTransformer, num_epochs=4, model_save_path='art
     # NOTE: Padding token is 2 or now, can change later
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=2)
 
-    logging.debug("Starting to train the model")
+    logging.info("Starting to train the model")
 
     training_losses, validation_losses = [], []
     training_batch_losses, validation_batch_losses = [], []
@@ -46,8 +46,8 @@ def train(transformer_model=BasicTransformer, num_epochs=4, model_save_path='art
         model.train()
         training_batch_loss = 0
 
-        train_pbar = tqdm(train)
-        valid_pbar = tqdm(validation)
+        train_pbar = tqdm(train, disable=disable_progress_bars)
+        valid_pbar = tqdm(validation, disable=disable_progress_bars)
 
         for batch in train_pbar:
             src, tgt = batch
@@ -86,7 +86,7 @@ def train(transformer_model=BasicTransformer, num_epochs=4, model_save_path='art
             valid_pbar.set_description(f"Epoch: {epoch} | Valid Batch loss: {loss.item()}")
         # NOTE: This could blow up very quickly, make sure that this
         # is fixed soon so that we dont have 4295498GB of artifacts
-        # Ideally: save like 5 or smth in total        
+        # Ideally: save like 5 or smth in total
         torch.save(model.state_dict(), model_save_path + f".tmp.{epoch}")
         validation_losses.append(validation_batch_loss)
         training_losses.append(training_batch_loss)
@@ -98,6 +98,7 @@ def train(transformer_model=BasicTransformer, num_epochs=4, model_save_path='art
         print(f"Validation Batch Losses: {validation_batch_losses}")
 
     torch.save(model.state_dict(), model_save_path)
+
 
 if __name__ == '__main__':
     avail_models = {
@@ -144,6 +145,13 @@ if __name__ == '__main__':
         action='store', dest='checkpoint', default=None
     )
 
+    parser.add_argument(
+        '-dp', '--disable-progress-bars',
+        help='Disable progress bars. Useful during interactive jobs',
+        action='store_const', dest="disable_progress_bars", const=True,
+        default=False
+    )
+
     # Parse the arguments
     args = parser.parse_args()
 
@@ -152,4 +160,4 @@ if __name__ == '__main__':
 
     model = avail_models[args.model]
 
-    train(model, model_save_path=args.model_path, load_model_checkpoint=args.checkpoint)
+    train(model, model_save_path=args.model_path, load_model_checkpoint=args.checkpoint, disable_progress_bars=args.disable_progress_bars)
