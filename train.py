@@ -17,7 +17,8 @@ def __init_randomness__(seed=DEFAULT_SEED):
     random.seed(seed)
 
 
-def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='artifacts/model.pt',
+@profile
+def train(transformer_model=BasicTransformer, num_epochs=1, model_save_path='artifacts/model.pt',
           load_model_checkpoint=None, disable_progress_bars=False):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     logging.info(f"Training on {device}")
@@ -26,7 +27,7 @@ def train(transformer_model=BasicTransformer, num_epochs=10, model_save_path='ar
 
     # TODO: Get vocab size and dataset. Assuming rn
     vocab_size = 5000
-    train, validation = create_dataloader_from_file('roneneldan/TinyStories', 512, 0.05, 32, 8, vocab_size)
+    train, validation = create_dataloader_from_file('roneneldan/TinyStories', 512, 0.005, 32, 8, vocab_size)
 
     model = transformer_model(vocab_size)
 
