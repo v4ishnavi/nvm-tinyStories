@@ -36,7 +36,11 @@ def train(transformer_model=BasicTransformer, num_epochs=3, model_save_path='art
 
     model = model.to(device)
     model = torch.compile(model)
-    scaler = torch.amp.GradScaler('cuda')
+
+    amp_availability = torch.amp.autocast_mode.is_autocast_available(device)
+    if amp_availability:
+        logging.info("Automatic Mixed Precision (AMP) scaling available! Using that to improve training speeds")
+        scaler = torch.amp.GradScaler(device)
 
     optim = torch.optim.Adam(model.parameters(), lr=1e-4, fused=True)
     # NOTE: Padding token is 2 or now, can change later
@@ -61,16 +65,24 @@ def train(transformer_model=BasicTransformer, num_epochs=3, model_save_path='art
             logging.debug(f"Moved src and tgt to {device}")
 
             optim.zero_grad(set_to_none=True)
-            with torch.amp.autocast('cuda'):
+
+            if amp_availability:
+                # NOTE: we only run mixed precision training
+                # since the biggest slowdown arrives during the backward
+                # pass. How do we speed this up?
+                with torch.amp.autocast('cuda'):
+                    output = model(src, (src == 2).float())
+                    loss = loss_fn(output.transpose(-1, -2), tgt)
+
+                scaler.scale(loss).backward()
+                scaler.step(optim)
+                scaler.update()
+            else:
                 output = model(src, (src == 2).float())
-                # logging.debug(f"output shape: {output.shape}")
-                # logging.debug(f"tgt shape: {tgt.shape}")
-                # NOTE: Temp fix to ensure the GPU does not run out of mem
                 loss = loss_fn(output.transpose(-1, -2), tgt)
 
-            scaler.scale(loss).backward()
-            scaler.step(optim)
-            scaler.update()
+                loss.backward()
+                optim.step()
 
             training_batch_loss += loss.item()
             training_batch_losses.append(loss.item())
