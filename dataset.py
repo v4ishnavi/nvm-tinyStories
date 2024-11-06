@@ -1,29 +1,48 @@
 import logging
 import argparse
-import pickle
 import re
+import os
 
 import torch
-import nltk
-from datasets import load_dataset
+import datasets
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
+import tokenizers
+
 
 class Small_Transformers_Dataset(Dataset):
-    def __init__(self, index_stories, vocab, idx2word):
-        self.index_stories = index_stories
-        self.vocab = vocab
-        self.idx2word = idx2word
+    def __init__(self, stories):
+        self.stories = stories
 
     def __len__(self):
-        return len(self.index_stories)
+        return len(self.stories)
 
     def __getitem__(self, idx):
-        story = self.index_stories[idx]
-        story_shifted = story[1:] + [self.vocab["<pad>"]]
+        story = self.stories[idx]["ids"]
+        story_shifted = story[1:] + [0]
 
         return torch.tensor(story), torch.tensor(story_shifted)
+
+
+# Creates a batch iterator from a dataset so that it is easier to train
+# a tokenizer from a dataset. Instead of writing our own functions that
+# may or may not be fast, we leverage HF's dataset functions to select
+# relevant columns and iterate through the dataset quickly
+def batch_iterator(dataset, batch_size=64):
+    for batch in dataset.select_columns("text").iter(batch_size=batch_size):
+        yield batch["text"]
+
+
+# Tokenize data. This ensures that each sentence is tokenized correctly
+# to be stored and loaded in the dataloader
+def tokenize_batch(batch, tknizer):
+    encoded_sentences = tknizer.encode_batch_fast(batch['text'])
+    return {
+        "text": batch['text'],
+        # TODO: convert all these to tensors
+        "ids": [item.ids for item in encoded_sentences]
+    }
 
 
 def create_dataloader_from_file(
@@ -35,122 +54,101 @@ def create_dataloader_from_file(
     max_vocab_size,
     vocab_file=None,
 ):
-    hf_dataset = load_dataset(dataset)
+    logging.info("Loading dataset")
+    hf_dataset = datasets.load_dataset(dataset)
 
-    train_data = hf_dataset["train"]
-    val_data = hf_dataset["validation"]
+    # Filter data to a manageable size to prevent things from going out of hand
+    logging.info("Filtering dataset to smaller size based on wanted fraction")
+    inv_fraction = 1 / fraction_wanted
+    hf_dataset = hf_dataset.filter(lambda _, idx: idx % inv_fraction == 0, with_indices=True)
 
-    train_stories = []
-    val_stories = []
+    # Remove samples with very short or very long sentences. Emperically, this
+    # represents a small, but very poor sample of the dataset.
+    hf_dataset = hf_dataset.filter(lambda e: len(e['text']) > 100 and len(e['text']) < 4096)
 
-    word_count = {}
 
-    for i in tqdm(
-        range(int(fraction_wanted * len(train_data))), desc="Processing train data"
-    ):
-        story = train_data[i]["text"]
-        story = story.lower()
-        story = re.sub(r"[^a-zA-Z\s]", " ", story)
-        story = re.sub(r"\s+", " ", story)
+    tokenizer_model = None
+    # Setup HF Tokenizer
+    if vocab_file is not None and os.path.exists(vocab_file):
+        logging.info("Loading existing tokenizer...")
+        tokenizer_model = tokenizers.Tokenizer.from_file(vocab_file)
+        # TODO: Make sure that the size of the dataset kept + vocab size is checked while loading the dataset
+    
+    if tokenizer_model is None:
+        logging.info("Vocab file either not provided or not found. Training tokenizer...")
+        tokenizer_model = tokenizers.Tokenizer(tokenizers.models.BPE(unk_token="[UNK]"))
+        tokenizer_model.pre_tokenizer = tokenizers.pre_tokenizers.Whitespace()
 
-        story = story.strip()
-        story = nltk.word_tokenize(story)
-        # story = ["<bos>"] + story + ["<eos>"]
+        from tokenizers.normalizers import (
+            Sequence,
+            Replace,
+            Strip,
+            Lowercase,
+        )
+        tokenizer_model.normalizer = Sequence([
+            # Basic cleanup
+            Lowercase(),
+            Strip(),                                   # Remove leading/trailing whitespace
+            Replace(r"\\", ""),                        # Remove backslashes
+            Replace(r"  +", " "),                      # Replace multiple spaces with single
 
-        if vocab_file is None:
-            for word in story:
-                if word in word_count:
-                    word_count[word] += 1
-                else:
-                    word_count[word] = 1
+            # Standardize dashes and quotes
+            Replace(r"–", "-"),                        # Standardize dashes
+            Replace(r" — ", " - "),
+            Replace(r"—", " - "),
+            Replace(r"…", "..."),                      # Standardize ellipsis
+            Replace(r""", '"'),                        # Standardize quotes
+            Replace(r""", '"'),
+            Replace(r"'", "'"),                        # Standardize apostrophes
 
-        train_stories.append(story)
+            # Remove unwanted special characters
+            Replace(
+                r".*[|</*`=_&@~#%\[\]+()].*", "",
+            ),
 
-    for i in tqdm(
-        range(int(fraction_wanted * len(val_data))), desc="Processing val data"
-    ):
-        story = val_data[i]["text"]
-        story = story.lower()
-        story = re.sub(r"[^a-zA-Z\s]", " ", story)
-        story = re.sub(r"\s+", " ", story)
+            # Remove texts with invalid characters (ord > 127 or < 32, except newline)
+            Replace(
+                r".*[^\x0A\x20-\x7F].*", "",
+            ),
+        ])
 
-        story = story.strip()
-        story = nltk.word_tokenize(story)
-        # story = ["<bos>"] + story + ["<eos>"]
-
-        if vocab_file is None:
-            for word in story:
-                if word in word_count:
-                    word_count[word] += 1
-                else:
-                    word_count[word] = 1
-
-        val_stories.append(story)
-
-    if vocab_file is not None:
-        with open(vocab_file, "rb") as f:
-            vocab = pickle.load(f)
-            assert len(vocab) <= max_vocab_size
-
-    else:
-        # sort word_count in descending order
-        word_count = dict(
-            sorted(word_count.items(), key=lambda item: item[1], reverse=True)
+        tokenizer_model.post_tokenizer = tokenizers.processors.TemplateProcessing(
+            single="[BOS] $A [EOS]",
+            special_tokens=[("[BOS]", 1), ("[EOS]", 2)],
         )
 
-        # select the top max_vocab_size words
-        top_words = list(word_count.keys())[: max_vocab_size - 4]
-        top_words = ["<bos>", "<eos>", "<pad>", "<unk>"] + top_words
-        vocab = {k: v for v, k in enumerate(top_words)}
-
-        with open("artifacts/vocab.pkl", "wb") as f:
-            pickle.dump(vocab, f)
-
-    idx2word = {idx: word for word, idx in vocab.items()}
-
-    index_train_stories = []
-    padded_train_stories = []
-    index_val_stories = []
-    padded_val_stories = []
-
-    for story in tqdm(train_stories, desc="Encoding train stories"):
-        index_story = [vocab.get(word, vocab["<unk>"]) for word in story]
-        new_story = story[: max_seq_length - 2]
-        # add bos eos
-        new_story = ["<bos>"] + new_story + ["<eos>"]
-        new_story = new_story + ["<pad>"] * (max_seq_length - len(new_story))
-
-        index_story = index_story[: max_seq_length - 2]
-        index_story = [vocab["<bos>"]] + index_story + [vocab["<eos>"]]
-        index_story = index_story + [vocab["<pad>"]] * (
-            max_seq_length - len(index_story)
+        trainer = tokenizers.trainers.BpeTrainer(
+            vocab_size=max_vocab_size,
+            special_tokens=['[PAD]', '[BOS]', '[EOS]', '[UNK]'],
+            show_progress=True,
         )
 
-        index_train_stories.append(index_story)
-        padded_train_stories.append(new_story)
-
-    for story in tqdm(val_stories, desc="Encoding val stories"):
-        index_story = [vocab.get(word, vocab["<unk>"]) for word in story]
-        new_story = story[: max_seq_length - 2]
-        # add bos eos
-        new_story = ["<bos>"] + new_story + ["<eos>"]
-        new_story = new_story + ["<pad>"] * (max_seq_length - len(new_story))
-
-        index_story = index_story[: max_seq_length - 2]
-        index_story = [vocab["<bos>"]] + index_story + [vocab["<eos>"]]
-        index_story = index_story + [vocab["<pad>"]] * (
-            max_seq_length - len(index_story)
+        tokenizer_model.train_from_iterator(
+            batch_iterator(hf_dataset['train'], batch_size=256),
+            trainer=trainer
         )
 
-        index_val_stories.append(index_story)
-        padded_val_stories.append(new_story)
+        tokenizer_model.enable_truncation(
+            max_length=max_seq_length
+        )
 
-    train_dataset = Small_Transformers_Dataset(index_train_stories, vocab, idx2word)
+        tokenizer_model.enable_padding(
+            direction='right',
+            pad_token='[PAD]',
+            pad_id=0
+        )
+
+    logging.info("Tokenizing sequences...")
+    hf_dataset = hf_dataset.map(tokenize_batch, batched=True, fn_kwargs={'tknizer': tokenizer_model})
+
+    logging.info("Returning output")
+
+    train_dataset = Small_Transformers_Dataset(hf_dataset['train'])
     train_dataloader = DataLoader(
         train_dataset, batch_size=train_batch_size, shuffle=False, pin_memory=True
     )
 
-    val_dataset = Small_Transformers_Dataset(index_val_stories, vocab, idx2word)
+    val_dataset = Small_Transformers_Dataset(hf_dataset['validation'])
     val_dataloader = DataLoader(val_dataset, batch_size=val_batch_size, shuffle=False)
 
     return train_dataloader, val_dataloader
@@ -158,14 +156,14 @@ def create_dataloader_from_file(
 
 def main():
     train_dataloader, val_dataloader = create_dataloader_from_file(
-        "roneneldan/TinyStories", 512, 0.0005, 64, 8, 1500,
+        "roneneldan/TinyStories", 512, 0.05, 64, 8, 1500,
     )
 
-    for batch_idx, (x, y) in enumerate(train_dataloader):
+    for x, y in train_dataloader:
         print(x)
         print(y)
         break
-    for batch_idx, (x, y) in enumerate(val_dataloader):
+    for x, y in val_dataloader:
         print(x)
         print(y)
         break
