@@ -12,3 +12,6 @@ venv/**/*
 
 # Remove compilation artifacts
 __pycache__/**/*
+
+# Remove profiling artifacts
+*.lprof

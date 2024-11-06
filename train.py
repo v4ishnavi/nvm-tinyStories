@@ -11,13 +11,11 @@ from dataset import create_dataloader_from_file
 
 DEFAULT_SEED = 42
 
-
 def __init_randomness__(seed=DEFAULT_SEED):
     torch.manual_seed(seed)
     random.seed(seed)
 
 
-@profile
 def train(transformer_model=BasicTransformer, num_epochs=3, model_save_path='artifacts/model.pt',
           load_model_checkpoint=None, disable_progress_bars=False):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -27,7 +25,7 @@ def train(transformer_model=BasicTransformer, num_epochs=3, model_save_path='art
 
     # TODO: Get vocab size and dataset. Asssuming rn
     vocab_size = 8192
-    train, validation = create_dataloader_from_file('roneneldan/TinyStories', 512, 0.0005, 16, 8, vocab_size)
+    train, validation = create_dataloader_from_file('roneneldan/TinyStories', 512, 0.0005, 32, 64, vocab_size)
 
     model = transformer_model(vocab_size)
 
@@ -35,9 +33,8 @@ def train(transformer_model=BasicTransformer, num_epochs=3, model_save_path='art
         model.load_state_dict(torch.load(load_model_checkpoint, map_location=device))
 
     model = model.to(device)
-    model = torch.compile(model)
 
-    amp_availability = torch.amp.autocast_mode.is_autocast_available(device)
+    amp_availability = torch.amp.autocast_mode.is_autocast_available("cuda:0" if torch.cuda.is_available() else "cpu")
     if amp_availability:
         logging.info("Automatic Mixed Precision (AMP) scaling available! Using that to improve training speeds")
         scaler = torch.amp.GradScaler(device)
@@ -80,7 +77,6 @@ def train(transformer_model=BasicTransformer, num_epochs=3, model_save_path='art
             else:
                 output = model(src, (src == 2).float())
                 loss = loss_fn(output.transpose(-1, -2), tgt)
-
                 loss.backward()
                 optim.step()
 
