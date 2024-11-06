@@ -1,7 +1,14 @@
+# Ensures that any training artifacts are ignored correctly instead
+# of being committed to the repository
 artifacts/**/*
-
-venv/**/*
-
 vocab.pkl
 
+# Ensures that any virtual environments are properly ignored
+.venv/**/*
+venv/**/*
+
+# Prevents leaking secrets into commits
 .env
+
+# Remove compilation artifacts
+__pycache__/**/*
