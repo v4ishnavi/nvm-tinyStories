@@ -25,7 +25,7 @@ def train(transformer_model=BasicTransformer, num_epochs=3, model_save_path='art
 
     # TODO: Get vocab size and dataset. Asssuming rn
     vocab_size = 8192
-    train, validation = create_dataloader_from_file('roneneldan/TinyStories', 512, 0.0005, 32, 64, vocab_size)
+    train, validation = create_dataloader_from_file('roneneldan/TinyStories', 512, 0.005, 16, 16, vocab_size)
 
     model = transformer_model(vocab_size)
 
@@ -68,14 +68,14 @@ def train(transformer_model=BasicTransformer, num_epochs=3, model_save_path='art
                 # since the biggest slowdown arrives during the backward
                 # pass. How do we speed this up?
                 with torch.amp.autocast('cuda'):
-                    output = model(src, (src == 2).float())
+                    output = model(src, (src == 0).float())
                     loss = loss_fn(output.transpose(-1, -2), tgt)
 
                 scaler.scale(loss).backward()
                 scaler.step(optim)
                 scaler.update()
             else:
-                output = model(src, (src == 2).float())
+                output = model(src, (src == 0).float())
                 loss = loss_fn(output.transpose(-1, -2), tgt)
                 loss.backward()
                 optim.step()
@@ -94,7 +94,7 @@ def train(transformer_model=BasicTransformer, num_epochs=3, model_save_path='art
             tgt = tgt.to(device)
 
             # NOTE: Padding token is 2 or now, can change later
-            output = model(src, src == 2)
+            output = model(src, src == 0)
             loss = loss_fn(output.transpose(-1, -2), tgt)
             validation_batch_loss += loss.item()
             validation_batch_losses.append(loss.item())

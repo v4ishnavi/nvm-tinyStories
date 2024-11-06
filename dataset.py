@@ -135,7 +135,8 @@ def create_dataloader_from_file(
         tokenizer_model.enable_padding(
             direction='right',
             pad_token='[PAD]',
-            pad_id=0
+            pad_id=0,
+            length=max_seq_length
         )
 
     logging.info("Tokenizing sequences...")
