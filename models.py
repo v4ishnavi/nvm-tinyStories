@@ -61,9 +61,9 @@ class BasicTransformer(nn.Module):
         src = self.pos_encoder(src)
         src_attn_mask = nn.Transformer.generate_square_subsequent_mask(src.size(1)).to(src.device)
 
-        logging.debug(f"src: {src.shape}")
-        logging.debug(f"src attn mask: {src_attn_mask.shape}")
-        logging.debug(f"src padding mask: {src_padding_mask.shape}")
+        # logging.debug(f"src: {src.shape}")
+        # logging.debug(f"src attn mask: {src_attn_mask.shape}")
+        # logging.debug(f"src padding mask: {src_padding_mask.shape}")
 
         output = self.transformer_encoder(src,
                                           mask=src_attn_mask,

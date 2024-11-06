@@ -147,7 +147,7 @@ def create_dataloader_from_file(
 
     train_dataset = Small_Transformers_Dataset(index_train_stories, vocab, idx2word)
     train_dataloader = DataLoader(
-        train_dataset, batch_size=train_batch_size, shuffle=False
+        train_dataset, batch_size=train_batch_size, shuffle=False, pin_memory=True
     )
 
     val_dataset = Small_Transformers_Dataset(index_val_stories, vocab, idx2word)

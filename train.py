@@ -18,24 +18,27 @@ def __init_randomness__(seed=DEFAULT_SEED):
 
 
 @profile
-def train(transformer_model=BasicTransformer, num_epochs=1, model_save_path='artifacts/model.pt',
+def train(transformer_model=BasicTransformer, num_epochs=3, model_save_path='artifacts/model.pt',
           load_model_checkpoint=None, disable_progress_bars=False):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     logging.info(f"Training on {device}")
 
     logging.info("Initialising the training process...")
 
-    # TODO: Get vocab size and dataset. Assuming rn
-    vocab_size = 5000
-    train, validation = create_dataloader_from_file('roneneldan/TinyStories', 512, 0.005, 32, 8, vocab_size)
+    # TODO: Get vocab size and dataset. Asssuming rn
+    vocab_size = 8192
+    train, validation = create_dataloader_from_file('roneneldan/TinyStories', 512, 0.0005, 16, 8, vocab_size)
 
     model = transformer_model(vocab_size)
 
     if load_model_checkpoint is not None:
         model.load_state_dict(torch.load(load_model_checkpoint, map_location=device))
 
-    model.to(device)
-    optim = torch.optim.Adam(model.parameters(), lr=1e-5)
+    model = model.to(device)
+    model = torch.compile(model)
+    scaler = torch.amp.GradScaler('cuda')
+
+    optim = torch.optim.Adam(model.parameters(), lr=1e-4, fused=True)
     # NOTE: Padding token is 2 or now, can change later
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=2)
 
@@ -57,13 +60,17 @@ def train(transformer_model=BasicTransformer, num_epochs=1, model_save_path='art
             tgt = tgt.to(device)
             logging.debug(f"Moved src and tgt to {device}")
 
-            optim.zero_grad()
-            output = model(src, (src == 2).float())
-            logging.debug(f"output shape: {output.shape}")
-            logging.debug(f"tgt shape: {tgt.shape}")
-            loss = loss_fn(output.transpose(-1, -2), tgt)
-            loss.backward()
-            optim.step()
+            optim.zero_grad(set_to_none=True)
+            with torch.amp.autocast('cuda'):
+                output = model(src, (src == 2).float())
+                # logging.debug(f"output shape: {output.shape}")
+                # logging.debug(f"tgt shape: {tgt.shape}")
+                # NOTE: Temp fix to ensure the GPU does not run out of mem
+                loss = loss_fn(output.transpose(-1, -2), tgt)
+
+            scaler.scale(loss).backward()
+            scaler.step(optim)
+            scaler.update()
 
             training_batch_loss += loss.item()
             training_batch_losses.append(loss.item())
@@ -81,14 +88,13 @@ def train(transformer_model=BasicTransformer, num_epochs=1, model_save_path='art
             # NOTE: Padding token is 2 or now, can change later
             output = model(src, src == 2)
             loss = loss_fn(output.transpose(-1, -2), tgt)
-
             validation_batch_loss += loss.item()
             validation_batch_losses.append(loss.item())
             valid_pbar.set_description(f"Epoch: {epoch} | Valid Batch loss: {loss.item()}")
         # NOTE: This could blow up very quickly, make sure that this
         # is fixed soon so that we dont have 4295498GB of artifacts
         # Ideally: save like 5 or smth in total
-        torch.save(model.state_dict(), model_save_path + f".tmp.{epoch}")
+        # torch.save(model.state_dict(), model_save_path + f".tmp.{epoch}")
         validation_losses.append(validation_batch_loss)
         training_losses.append(training_batch_loss)
 
