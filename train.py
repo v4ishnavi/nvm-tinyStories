@@ -1,53 +1,55 @@
 import logging
 import argparse
 import random
+import os
+import datetime
 
 import torch
 from tqdm import tqdm
 
 from models import BasicTransformer
-
 from dataset import create_dataloader_from_file
+from config import read_config, save_model_with_config
 
 DEFAULT_SEED = 42
+
 
 def __init_randomness__(seed=DEFAULT_SEED):
     torch.manual_seed(seed)
     random.seed(seed)
 
 
-def train(transformer_model=BasicTransformer, num_epochs=3, model_save_path='artifacts/model.pt',
-          load_model_checkpoint=None, disable_progress_bars=False):
+def train(config, transformer_model=BasicTransformer, disable_progress_bars=False):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     logging.info(f"Training on {device}")
 
     logging.info("Initialising the training process...")
 
-    # TODO: Get vocab size and dataset. Asssuming rn
-    vocab_size = 8192
-    train, validation = create_dataloader_from_file('roneneldan/TinyStories', 512, 0.005, 16, 16, vocab_size)
+    train, validation = create_dataloader_from_file(config)
+    model = transformer_model(config)
 
-    model = transformer_model(vocab_size)
-
-    if load_model_checkpoint is not None:
-        model.load_state_dict(torch.load(load_model_checkpoint, map_location=device))
-
+    if config.transformer.load:
+        model.load_state_dict(torch.load(
+            config.transformer.path + "/model.pt",
+            map_location=device
+        ))
     model = model.to(device)
 
     amp_availability = torch.amp.autocast_mode.is_autocast_available("cuda:0" if torch.cuda.is_available() else "cpu")
     if amp_availability:
-        logging.info("Automatic Mixed Precision (AMP) scaling available! Using that to improve training speeds")
+        logging.info("Automatic Mixed Precision (AMP) scaling available! "
+                     "Using that to improve training speeds")
         scaler = torch.amp.GradScaler(device)
 
     optim = torch.optim.Adam(model.parameters(), lr=1e-4, fused=True)
-    # NOTE: Padding token is 2 or now, can change later
-    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=2)
+    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=0)
 
     logging.info("Starting to train the model")
 
     training_losses, validation_losses = [], []
     training_batch_losses, validation_batch_losses = [], []
-    for epoch in range(num_epochs):
+    for epoch in range(config.trainer.num_epochs):
+        # Trainer Loop
         model.train()
         training_batch_loss = 0
 
@@ -83,7 +85,7 @@ def train(transformer_model=BasicTransformer, num_epochs=3, model_save_path='art
             training_batch_loss += loss.item()
             training_batch_losses.append(loss.item())
             # NOTE: find a way to show per batch loss with tqdm
-            train_pbar.set_description(f"Epoch: {epoch} | Batch loss: {loss.item()}")
+            train_pbar.set_description(f"Epoch: {epoch + 1} | Batch loss: {loss.item()}")
 
         model.eval()
         validation_batch_loss = 0
@@ -98,7 +100,8 @@ def train(transformer_model=BasicTransformer, num_epochs=3, model_save_path='art
             loss = loss_fn(output.transpose(-1, -2), tgt)
             validation_batch_loss += loss.item()
             validation_batch_losses.append(loss.item())
-            valid_pbar.set_description(f"Epoch: {epoch} | Valid Batch loss: {loss.item()}")
+            valid_pbar.set_description(f"Epoch: {epoch + 1} | Valid Batch loss: {loss.item()}")
+
         # NOTE: This could blow up very quickly, make sure that this
         # is fixed soon so that we dont have 4295498GB of artifacts
         # Ideally: save like 5 or smth in total
@@ -112,7 +115,13 @@ def train(transformer_model=BasicTransformer, num_epochs=3, model_save_path='art
         print(f"Training Batch Losses: {training_batch_losses}")
         print(f"Validation Batch Losses: {validation_batch_losses}")
 
-    torch.save(model.state_dict(), model_save_path)
+    slurm_job_id = os.getenv("SLURM_JOB_ID")
+    config.output.stdout_path = config.output.stdout_path.format(slurm_job_id)
+    config.output.stderr_path = config.output.stderr_path.format(slurm_job_id)
+    config.output.save_time = datetime.datetime.now()
+    config.epochs_trained_for = config.trainer.num_epochs
+
+    save_model_with_config(config, model)
 
 
 if __name__ == '__main__':
@@ -137,42 +146,27 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
-        '-s', '--seed',
-        help="Force seed for deterministic randomness",
-        action="store", dest="seed", default=DEFAULT_SEED, type=int
-    )
-
-    parser.add_argument(
-        '-m', '--model',
-        help="Choose what model to run", choices=avail_models.keys(),
-        action='store', dest='model', default='basic'
-    )
-
-    parser.add_argument(
-        '-p', '--model-save-path',
-        help="Choose where is the model saved",
-        action='store', dest='model_path', default='artifacts/model.pt'
-    )
-
-    parser.add_argument(
-        '-l', '--model-checkpoint-load',
-        help='Load model from checkpoint',
-        action='store', dest='checkpoint', default=None
-    )
-
-    parser.add_argument(
         '-dp', '--disable-progress-bars',
         help='Disable progress bars. Useful during interactive jobs',
         action='store_const', dest="disable_progress_bars", const=True,
         default=False
     )
 
+    parser.add_argument(
+        'config',
+        help="Provide the path to the config file [TOML]. For more " \
+        "information, check config.py",
+        action="store"
+    )
+
     # Parse the arguments
     args = parser.parse_args()
+    configuration = read_config(args.config)
 
     logging.basicConfig(level=args.loglevel)
-    __init_randomness__(args.seed)
 
-    model = avail_models[args.model]
+    # We assume the mdoel to be basic
+    # TODO: Add it to the TOML file
+    model = avail_models['basic']
 
-    train(model, model_save_path=args.model_path, load_model_checkpoint=args.checkpoint, disable_progress_bars=args.disable_progress_bars)
+    train(configuration, model, disable_progress_bars=args.disable_progress_bars)

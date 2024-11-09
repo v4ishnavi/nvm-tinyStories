@@ -5,6 +5,8 @@ import torch.nn as nn
 import torch.nn.init as init
 import math
 
+import config
+
 # Positional Encoding
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=5000):
@@ -34,20 +36,20 @@ class RMSNorm(nn.Module):
 
 
 class BasicTransformer(nn.Module):
-    def __init__(self,
-                 vocab_size,
-                 d_model=512,
-                 nhead=8,
-                 num_encoder_layers=6,
-                 num_decoder_layers=6,
-                 dim_feedforward=2048):
-
+    def __init__(self, config: config.TransformerConfig):
         super(BasicTransformer, self).__init__()
+        vocab_size = config.tokenizer.vocab_size
+        d_model = config.transformer.model_dimension
+        nhead = config.transformer.heads
+        dim_feedforward = config.transformer.feedforward_dimension
+        num_layers = config.transformer.layers
+
+        
         self.embedding = nn.Embedding(vocab_size, d_model)
         self.pos_encoder = PositionalEncoding(d_model)
 
         encoder_layer = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward, batch_first=True)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_encoder_layers)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers)
 
         self.d_model = d_model
         self.linear = nn.Linear(d_model, vocab_size)

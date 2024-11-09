@@ -45,37 +45,35 @@ def tokenize_batch(batch, tknizer):
     }
 
 
-def create_dataloader_from_file(
-    dataset,
-    max_seq_length,
-    fraction_wanted,
-    train_batch_size,
-    val_batch_size,
-    max_vocab_size,
-    vocab_file=None,
-):
+def create_dataloader_from_file(config):
     logging.info("Loading dataset")
-    hf_dataset = datasets.load_dataset(dataset)
+    hf_dataset = datasets.load_dataset(config.dataloader.dataset)
 
     # Filter data to a manageable size to prevent things from going out of hand
     logging.info("Filtering dataset to smaller size based on wanted fraction")
-    inv_fraction = 1 / fraction_wanted
-    hf_dataset = hf_dataset.filter(lambda _, idx: idx % inv_fraction == 0, with_indices=True)
+    inv_fraction = 1 / config.dataloader.fraction_of_data
+    hf_dataset = hf_dataset.filter(
+        lambda _, idx: idx % inv_fraction == 0,
+        with_indices=True
+    )
 
-    # Remove samples with very short or very long sentences. Emperically, this
-    # represents a small, but very poor sample of the dataset.
-    hf_dataset = hf_dataset.filter(lambda e: len(e['text']) > 100 and len(e['text']) < 4096)
-
+    # Remove samples with very short or very long sentences. Emperically,
+    # this represents a small, but very poor sample of the dataset.
+    hf_dataset = hf_dataset.filter(
+        lambda e: len(e['text']) > 100 and len(e['text']) < 4096
+    )
 
     tokenizer_model = None
+    vocab_file = config.tokenizer.path
     # Setup HF Tokenizer
     if vocab_file is not None and os.path.exists(vocab_file):
         logging.info("Loading existing tokenizer...")
         tokenizer_model = tokenizers.Tokenizer.from_file(vocab_file)
         # TODO: Make sure that the size of the dataset kept + vocab size is checked while loading the dataset
-    
+
     if tokenizer_model is None:
-        logging.info("Vocab file either not provided or not found. Training tokenizer...")
+        logging.info("Vocab file either not provided or not found. "
+                     "Training tokenizer...")
         tokenizer_model = tokenizers.Tokenizer(tokenizers.models.BPE(unk_token="[UNK]"))
         tokenizer_model.pre_tokenizer = tokenizers.pre_tokenizers.Whitespace()
 
@@ -88,25 +86,27 @@ def create_dataloader_from_file(
         tokenizer_model.normalizer = Sequence([
             # Basic cleanup
             Lowercase(),
-            Strip(),                                   # Remove leading/trailing whitespace
-            Replace(r"\\", ""),                        # Remove backslashes
-            Replace(r"  +", " "),                      # Replace multiple spaces with single
+            # Remove leading/trailing whitespace
+            Strip(),
+            # Remove backslashes
+            Replace(r"\\", ""),
+            # Replace multiple spaces with single
+            Replace(r"  +", " "),
 
-            # Standardize dashes and quotes
-            Replace(r"–", "-"),                        # Standardize dashes
+            # Standardize dashes, eliipses, quotes and apostrophes
+            Replace(r"–", "-"),
             Replace(r" — ", " - "),
             Replace(r"—", " - "),
-            Replace(r"…", "..."),                      # Standardize ellipsis
-            Replace(r""", '"'),                        # Standardize quotes
+            Replace(r"…", "..."),
             Replace(r""", '"'),
-            Replace(r"'", "'"),                        # Standardize apostrophes
+            Replace(r""", '"'),
+            Replace(r"'", "'"),
 
             # Remove unwanted special characters
-            Replace(
-                r".*[|</*`=_&@~#%\[\]+()].*", "",
-            ),
+            Replace(r".*[|</*`=_&@~#%\[\]+()].*", ""),
 
-            # Remove texts with invalid characters (ord > 127 or < 32, except newline)
+            # Remove texts with invalid characters
+            # (ord > 127 or < 32, except newline)
             Replace(
                 r".*[^\x0A\x20-\x7F].*", "",
             ),
@@ -118,7 +118,7 @@ def create_dataloader_from_file(
         )
 
         trainer = tokenizers.trainers.BpeTrainer(
-            vocab_size=max_vocab_size,
+            vocab_size=config.tokenizer.vocab_size,
             special_tokens=['[PAD]', '[BOS]', '[EOS]', '[UNK]'],
             show_progress=True,
         )
@@ -129,28 +129,41 @@ def create_dataloader_from_file(
         )
 
         tokenizer_model.enable_truncation(
-            max_length=max_seq_length
+            max_length=config.dataloader.max_sentence_length
         )
 
         tokenizer_model.enable_padding(
             direction='right',
             pad_token='[PAD]',
             pad_id=0,
-            length=max_seq_length
+            length=config.dataloader.max_sentence_length
         )
 
+        tokenizer_model.save(config.tokenizer.path)
+
+
     logging.info("Tokenizing sequences...")
-    hf_dataset = hf_dataset.map(tokenize_batch, batched=True, fn_kwargs={'tknizer': tokenizer_model})
+    hf_dataset = hf_dataset.map(
+        tokenize_batch,
+        batched=True,
+        fn_kwargs={'tknizer': tokenizer_model}
+    )
 
     logging.info("Returning output")
 
     train_dataset = Small_Transformers_Dataset(hf_dataset['train'])
     train_dataloader = DataLoader(
-        train_dataset, batch_size=train_batch_size, shuffle=False, pin_memory=True
+        train_dataset,
+        batch_size=config.dataloader.train_batch_size,
+        shuffle=False,
+        pin_memory=True
     )
 
     val_dataset = Small_Transformers_Dataset(hf_dataset['validation'])
-    val_dataloader = DataLoader(val_dataset, batch_size=val_batch_size, shuffle=False)
+    val_dataloader = DataLoader(
+        val_dataset,
+        batch_size=config.dataloader.validation_batch_size,
+        shuffle=False)
 
     return train_dataloader, val_dataloader
 

@@ -6,6 +6,7 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --job-name=train-transformer
 #SBATCH -o .sbatch-training-logs.out.%j
+#SBATCH -e .sbatch-training-logs.err.%j
 #SBATCH --time=1-00:00:00
 #SBATCH --gpus=1
 #SBATCH --mem=16GB
