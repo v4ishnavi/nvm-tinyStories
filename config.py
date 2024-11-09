@@ -1,6 +1,7 @@
 from datetime import datetime
 import dataclasses
 import pathlib
+import os
 import argparse
 
 import tosholi
@@ -129,11 +130,18 @@ def save_model_with_config(config, model):
     torch.save(model.state_dict(), str(save_path / "model.pt"))
 
     # symlink the tokenizer
-    (save_path / "tokenizer").symlink_to(pathlib.Path(config.tokenizer.path))
+    tokenizer_path = save_path / "tokenizer.json"
+    rel_tokenizer_path = os.path.relpath(config.tokenizer.path, start=save_path)
+    tokenizer_path.symlink_to(rel_tokenizer_path)
 
     # symlinks to output logs to allow for easy discoverability
-    (save_path / "stdout_log").symlink_to(pathlib.Path(config.output.stdout_path))
-    (save_path / "stderr_log").symlink_to(pathlib.Path(config.output.stderr_path))
+    stdout_path = (save_path / "stdout_log")
+    rel_stdout_path = os.path.relpath(config.output.stdout_path, start=save_path)
+    stdout_path.symlink_to(rel_stdout_path)
+
+    stderr_path = (save_path / "stderr_log")
+    rel_stderr_path = os.path.relpath(config.output.stderr_path, start=save_path)
+    stderr_path.symlink_to(rel_stderr_path)
 
     # save the updated config for sentence and report generation
     with (save_path / "config.toml").open(mode='wb') as f:
