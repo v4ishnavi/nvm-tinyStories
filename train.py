@@ -169,4 +169,6 @@ if __name__ == '__main__':
     # TODO: Add it to the TOML file
     model = avail_models['basic']
 
+    __init_randomness__(configuration.seed)
+
     train(configuration, model, disable_progress_bars=args.disable_progress_bars)
