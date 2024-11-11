@@ -127,7 +127,7 @@ def train(config, transformer_model=BasicTransformer, disable_progress_bars=Fals
         # NOTE: This could blow up very quickly, make sure that this
         # is fixed soon so that we dont have 4295498GB of artifacts
         # Ideally: save like 5 or smth in total
-        # torch.save(model.state_dict(), model_save_path + f".tmp.{epoch}")
+        torch.save(model.state_dict(), config.transformer.path + f"/model.pt.tmp.{epoch}")
 
         validation_batch_loss /= len(validation)
         training_batch_loss /= len(train)
