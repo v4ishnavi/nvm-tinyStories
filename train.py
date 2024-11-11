@@ -3,6 +3,7 @@ import argparse
 import random
 import os
 import datetime
+import dataclasses
 
 import torch
 from tqdm import tqdm
@@ -11,7 +12,23 @@ from models import BasicTransformer
 from dataset import create_dataloader_from_file
 from config import read_config, save_model_with_config
 
+import neptune
+
 DEFAULT_SEED = 42
+
+
+def __init_neptune(configuration):
+    run = neptune.init_run(
+        project=configuration.neptune.project_name,
+        api_token=os.getenv("NEPTUNE_API_TOKEN"),
+        name=configuration.neptune.run_name,
+        tags=["debug-run"],
+        dependencies='infer',
+        monitoring_namespace='monitoring',
+        source_files=["*.py"],
+    )
+    run["config"] = dataclasses.asdict(configuration)
+    return run
 
 
 def __init_randomness__(seed=DEFAULT_SEED):
@@ -19,7 +36,11 @@ def __init_randomness__(seed=DEFAULT_SEED):
     random.seed(seed)
 
 
-def train(config, transformer_model=BasicTransformer, disable_progress_bars=False):
+def train(config, transformer_model=BasicTransformer, disable_progress_bars=False, neptune_run={}):
+    # Neptune run is an empty dict by default to ensure that runs are logged properly
+    if neptune_run is None:
+        logging.warning("Run not being recorded on Neptune! This needs to be recorded manually")
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     logging.info(f"Training on {device}")
 
@@ -41,7 +62,7 @@ def train(config, transformer_model=BasicTransformer, disable_progress_bars=Fals
                      "Using that to improve training speeds")
         scaler = torch.amp.GradScaler(device)
 
-    optim = torch.optim.Adam(model.parameters(), lr=1e-4, fused=True)
+    optim = torch.optim.Adam(model.parameters(), lr=config.trainer.learning_rate, fused=True)
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=0)
 
     logging.info("Starting to train the model")
@@ -84,8 +105,8 @@ def train(config, transformer_model=BasicTransformer, disable_progress_bars=Fals
 
             training_batch_loss += loss.item()
             training_batch_losses.append(loss.item())
-            # NOTE: find a way to show per batch loss with tqdm
-            train_pbar.set_description(f"Epoch: {epoch + 1} | Batch loss: {loss.item()}")
+            neptune_run["train/batch_loss"].append(loss.item())
+            train_pbar.set_description(f"Epoch: {epoch + 1} / {config.trainer.num_epochs} | Batch loss: {loss.item()}")
 
         model.eval()
         validation_batch_loss = 0
@@ -100,14 +121,22 @@ def train(config, transformer_model=BasicTransformer, disable_progress_bars=Fals
             loss = loss_fn(output.transpose(-1, -2), tgt)
             validation_batch_loss += loss.item()
             validation_batch_losses.append(loss.item())
+            neptune_run["valid/batch_loss"].append(loss.item())
             valid_pbar.set_description(f"Epoch: {epoch + 1} | Valid Batch loss: {loss.item()}")
 
         # NOTE: This could blow up very quickly, make sure that this
         # is fixed soon so that we dont have 4295498GB of artifacts
         # Ideally: save like 5 or smth in total
         # torch.save(model.state_dict(), model_save_path + f".tmp.{epoch}")
+
+        validation_batch_loss /= len(validation)
+        training_batch_loss /= len(train)
+
         validation_losses.append(validation_batch_loss)
         training_losses.append(training_batch_loss)
+
+        neptune_run["train/epoch_loss"].append(training_batch_loss)
+        neptune_run["valid/epoch_loss"].append(validation_batch_loss)
 
         print(f"Training Losses: {training_losses}")
         print(f"Validation Losses: {validation_losses}")
@@ -170,5 +199,8 @@ if __name__ == '__main__':
     model = avail_models['basic']
 
     __init_randomness__(configuration.seed)
+    run = __init_neptune(configuration)
 
-    train(configuration, model, disable_progress_bars=args.disable_progress_bars)
+    train(configuration, model, disable_progress_bars=args.disable_progress_bars, neptune_run=run)
+
+    run.stop()

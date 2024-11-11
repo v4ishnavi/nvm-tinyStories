@@ -81,6 +81,18 @@ class TrainerConfig:
 
 
 @dataclasses.dataclass
+class NeptuneConfig:
+    """
+    This stores the configuration for Neptune Logging. Note that the API
+    key is obtained from NEPTUNE_API_TOKEN
+    """
+    project_name: str = 'mon/ANLP'
+    run_name: str = 'training-run'
+    # TODO: Debug this to ensure this works as expected
+    # tags: tuple = ('train', 'debug-run')
+
+
+@dataclasses.dataclass
 class OutputConfig:
     """
     This option is not read, only output, to reference the logs and other
@@ -102,6 +114,7 @@ class Config:
     dataloader: DataloaderConfig
     trainer: TrainerConfig
     output: OutputConfig
+    neptune: NeptuneConfig
 
     # What random seed to use?
     seed: int = 42
@@ -159,7 +172,8 @@ def save_config(path):
         tokenizer=TokenizerConfig(),
         dataloader=DataloaderConfig(),
         trainer=TrainerConfig(),
-        output=OutputConfig()
+        output=OutputConfig(),
+        neptune=NeptuneConfig(),
     )
 
     with open(path, 'wb') as f:

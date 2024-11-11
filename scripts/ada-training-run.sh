@@ -33,4 +33,4 @@ cat requirements.txt | xargs uv add
 
 # Runs the actual Python file
 echo "starting training..."
-python3 train.py -v -dp
+python3 train.py default-config.toml -v -dp
