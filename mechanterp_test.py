@@ -80,7 +80,7 @@ class AttentionVisualizer:
                 raise ValueError("Attention weights not found in module output. Check model implementation.")
         return hook
 
-    def visualize_attention(self, text, layer, head):
+    def visualize_attention(self, text, layer, head, image_path = None):
         logging.info(f"Visualizing attention for text: '{text}'")
 
         # Preprocess the input text
@@ -123,6 +123,8 @@ class AttentionVisualizer:
         plt.xticks(rotation=45)
         plt.yticks(rotation=0)
         plt.tight_layout()
+        if image_path is not None:
+            plt.savefig(image_path)
         plt.show()
 
 
@@ -134,18 +136,22 @@ def main():
     parser.add_argument('--text', required=True, help="Text input for visualization")
     parser.add_argument('--layer', type=int, default=0, help="Layer index to visualize")
     parser.add_argument('--head', type=int, default=0, help="Head index to visualize")
+    parser.add_argument('--all-heads', type = bool, default = False, help="Print attention matrices for all heads in the specified layer")
     parser.add_argument('-v', '--verbose', help="Enable verbose logs", 
                        action='store_const', const=logging.INFO, default=logging.WARNING)
-    parser.add_argument('--all-heads', action='store_true', help="Print attention matrices for all heads in the specified layer")
-
+    # parser.add_argument('--all-heads', action='store_true', help="Print attention matrices for all heads in the specified layer")
+    parser.add_argument('--image-path',help="Path to save the image")
     args = parser.parse_args()
 
     logging.basicConfig(level=min(args.debug, args.verbose))
 
     config = read_config(args.config)
     visualizer = AttentionVisualizer(config)
-    visualizer.visualize_attention(args.text, args.layer, args.head)
-
-
+    if args.all_heads:
+        for head in range(config.transformer.heads):
+            visualizer.visualize_attention(args.text, args.layer, head, args.image_path)
+    else:
+        visualizer.visualize_attention(args.text, args.layer, args.head, args.image_path)
+    
 if __name__ == '__main__':
     main()
