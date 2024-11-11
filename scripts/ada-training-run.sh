@@ -21,7 +21,7 @@
 # It also assumes that the virtual environment is setup in .venv. Feel
 # free to change this based on your preferences.
 
-# Usage: sbatch ./scripts/ada-training-run.sh
+# Usage: sbatch ./scripts/ada-training-run.sh <config-file.toml>
 
 module add u18/python/3.11.2
 
@@ -32,5 +32,6 @@ source .venv/bin/activate
 cat requirements.txt | xargs uv add
 
 # Runs the actual Python file
+echo "Config file: $1"
 echo "starting training..."
-python3 train.py default-config.toml -v -dp
+python3 train.py "$1" -v -dp
