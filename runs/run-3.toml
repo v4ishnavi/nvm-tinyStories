@@ -1,0 +1,35 @@
+seed = 42
+
+[transformer]
+model_dimension = 256
+heads = 8
+layers = 6
+feedforward_dimension = 2048
+load = false
+path = "artifacts/transformer-run-03"
+
+[tokenizer]
+load = false
+path = "artifacts/tokenizer-10p-8192.json"
+vocab_size = 8192
+
+[dataloader]
+dataset = "roneneldan/TinyStories"
+fraction_of_data = 0.1
+max_sentence_length = 512
+train_batch_size = 32
+validation_batch_size = 16
+
+[trainer]
+learning_rate = 0.0001
+num_epochs = 10
+
+[output]
+stdout_path = ".sbatch-training-logs.out.{}"
+stderr_path = ".sbatch-training-logs.err.{}"
+epochs_trained_for = 0
+save_time = 2024-11-11 21:19:30.823077
+
+[neptune]
+project_name = "mon/ANLP"
+run_name = "run-02-256-dims"
