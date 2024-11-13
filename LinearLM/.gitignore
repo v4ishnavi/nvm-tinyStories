@@ -1,0 +1,9 @@
+# ignore .neptune folder 
+.neptune/**/*
+
+
+# ignore check_torch.py and tokenizer2.json 
+check_torch.py
+tokenizer2.json
+
+**/__pycache__/**/*
