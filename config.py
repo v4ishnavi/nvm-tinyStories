@@ -78,6 +78,7 @@ class TrainerConfig:
     """
     learning_rate: float = 1e-3
     num_epochs: int = 4
+    accumulate_grad: int = 1
 
 
 @dataclasses.dataclass

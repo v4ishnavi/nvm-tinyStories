@@ -65,6 +65,12 @@ def train(config, transformer_model=BasicTransformer, disable_progress_bars=Fals
     optim = torch.optim.Adam(model.parameters(), lr=config.trainer.learning_rate, fused=True)
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=0)
 
+    # Warn if we are missing the last few epochs since the optimizer does not step through them
+    if len(train) % config.trainer.accumulate_grad != 0:
+        logging.warn("Some iterations may not be correctly accounted for with "
+                     "the optimizer. Make sure that the training length is a"
+                     "multiple of the training dataset size.")
+
     logging.info("Starting to train the model")
 
     training_losses, validation_losses = [], []
@@ -77,14 +83,12 @@ def train(config, transformer_model=BasicTransformer, disable_progress_bars=Fals
         train_pbar = tqdm(train, disable=disable_progress_bars)
         valid_pbar = tqdm(validation, disable=disable_progress_bars)
 
-        for batch in train_pbar:
+        for batch_num, batch in enumerate(train_pbar):
             src, tgt = batch
 
             src = src.to(device)
             tgt = tgt.to(device)
             logging.debug(f"Moved src and tgt to {device}")
-
-            optim.zero_grad(set_to_none=True)
 
             if amp_availability:
                 # NOTE: we only run mixed precision training
@@ -93,15 +97,28 @@ def train(config, transformer_model=BasicTransformer, disable_progress_bars=Fals
                 with torch.amp.autocast('cuda'):
                     output = model(src, (src == 0).float())
                     loss = loss_fn(output.transpose(-1, -2), tgt)
+                    loss /= config.trainer.accumulate_grad
 
-                scaler.scale(loss).backward()
-                scaler.step(optim)
-                scaler.update()
+                if (
+                        (batch_num + 1) % config.trainer.accumulate_grad == 0
+                        or (batch_num + 1) == len(train)
+                ):
+                    scaler.scale(loss).backward()
+                    scaler.step(optim)
+                    scaler.update()
+                    optim.zero_grad(set_to_none=True)
             else:
                 output = model(src, (src == 0).float())
                 loss = loss_fn(output.transpose(-1, -2), tgt)
+                loss /= config.trainer.accumulate_grad
+
                 loss.backward()
-                optim.step()
+                if (
+                        (batch_num + 1) % config.trainer.accumulate_grad == 0
+                        or (batch_num + 1) == len(train)
+                ):
+                    optim.step()
+                    optim.zero_grad(set_to_none=True)
 
             training_batch_loss += loss.item()
             training_batch_losses.append(loss.item())
@@ -127,6 +144,8 @@ def train(config, transformer_model=BasicTransformer, disable_progress_bars=Fals
         # NOTE: This could blow up very quickly, make sure that this
         # is fixed soon so that we dont have 4295498GB of artifacts
         # Ideally: save like 5 or smth in total
+        if not os.path.exists(config.transformer.path):
+            os.mkdir(config.transformer.path)
         torch.save(model.state_dict(), config.transformer.path + f"/model.pt.tmp.{epoch}")
 
         validation_batch_loss /= len(validation)
@@ -144,9 +163,6 @@ def train(config, transformer_model=BasicTransformer, disable_progress_bars=Fals
         print(f"Training Batch Losses: {training_batch_losses}")
         print(f"Validation Batch Losses: {validation_batch_losses}")
 
-    slurm_job_id = os.getenv("SLURM_JOB_ID")
-    config.output.stdout_path = config.output.stdout_path.format(slurm_job_id)
-    config.output.stderr_path = config.output.stderr_path.format(slurm_job_id)
     config.output.save_time = datetime.datetime.now()
     config.epochs_trained_for = config.trainer.num_epochs
 
@@ -199,6 +215,11 @@ if __name__ == '__main__':
     model = avail_models['basic']
 
     __init_randomness__(configuration.seed)
+
+    slurm_job_id = os.getenv("SLURM_JOB_ID")
+    configuration.output.stdout_path = configuration.output.stdout_path.format(slurm_job_id)
+    configuration.output.stderr_path = configuration.output.stderr_path.format(slurm_job_id)
+
     run = __init_neptune(configuration)
 
     train(configuration, model, disable_progress_bars=args.disable_progress_bars, neptune_run=run)
