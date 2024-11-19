@@ -18,5 +18,6 @@
     "neptune":{
         "project_name": "mon/ANLP",
         "run_name": "tinystories-unchanged-linear"
-    }
+    },
+    "checkpoint_path": "LinearLM-main/artifacts/linear_decoder/ANLP-56/127999.pt"
 }

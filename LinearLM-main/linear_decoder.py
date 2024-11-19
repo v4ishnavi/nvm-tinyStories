@@ -29,7 +29,7 @@ def __init_neptune(config):
         project=config.get('neptune', {}).get('project_name', 'default/project'),
         api_token=os.getenv("NEPTUNE_API_TOKEN"),
         name=config.get('neptune', {}).get('run_name', 'training-run'),
-        tags=["linear-decoder"],
+        tags=["linear-decoder-retrain"],
         dependencies='infer',
         monitoring_namespace='monitoring',
         source_files=["*.py"],
@@ -218,6 +218,19 @@ save_steps = config['save_steps']
 samples_per_step = config['batch_size']
 output_dir = config['output_dir']
 
+checkpoint_path = config.get('checkpoint_path')  # Specify your checkpoint path in the config
+if checkpoint_path:
+    checkpoint = torch.load(checkpoint_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    completed_steps = checkpoint.get('completed_steps', 0)
+    start_epoch = checkpoint.get('epoch', 0)
+    print(f"Checkpoint loaded. Resuming from epoch {start_epoch}, step {completed_steps}.")
+else:
+    print("No checkpoint specified. Starting training from scratch.")
+    start_epoch = 0
+    completed_steps = 0
+
 model.train()
 completed_steps = 0
 # num_train_epochs = 1
@@ -269,6 +282,6 @@ for epoch in range(num_train_epochs):
             run_id = neptune_run["sys/id"].fetch()
             out_dir = os.path.join(output_dir, run_id)
             os.makedirs(out_dir, exist_ok=True)
-            torch.save(unwrapped_model.state_dict(), f'{out_dir}/{step}.pt')
+            torch.save(unwrapped_model.state_dict(), f'{out_dir}/lfc_{step}.pt')
 
 neptune_run.stop()

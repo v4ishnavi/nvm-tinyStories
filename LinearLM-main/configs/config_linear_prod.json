@@ -19,5 +19,6 @@
     "joined_tokens": true,
     "min_num": 1111,
     "max_num": 10000,
-    "output_dir": "/tmp/linear_decoder/"
+    "output_dir": "/tmp/linear_decoder/",
+    "checkpoint_path": "LinearLM-main/artifacts/linear_decoder/ANLP-56/127999.pt"
 }
