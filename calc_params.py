@@ -1,8 +1,9 @@
 
 configs = [
-    {'vocab_size': 1500, 'd_model': 512, 'num_encoder_layers': 8, 'nhead': 8, 'dim_feedforward': 4*512},
-    {'vocab_size': 1500, 'd_model': 1024, 'num_encoder_layers': 8, 'nhead': 8, 'dim_feedforward': 4*1024},
-    {'vocab_size': 1500, 'd_model': 768, 'num_encoder_layers': 8, 'nhead': 8, 'dim_feedforward': 4*768}
+    {'vocab_size': 8192, 'd_model': 512, 'num_encoder_layers': 6, 'nhead': 8, 'dim_feedforward': 2048},
+    {'vocab_size': 8192, 'd_model': 1024, 'num_encoder_layers': 6, 'nhead': 8, 'dim_feedforward': 2048},
+    {'vocab_size': 8192, 'd_model': 256, 'num_encoder_layers': 6, 'nhead': 8, 'dim_feedforward': 2048},
+    
 ]
 
 def calculate_encoder_parameters(vocab_size, d_model, num_encoder_layers, nhead, dim_feedforward):
