@@ -1,7 +1,7 @@
 # nvm-tinyStories
 
 the following is the structure of the folders. 
-`
+```
 -artifacts 
 -- transformer-iterations
 --- config.toml
@@ -55,4 +55,4 @@ the following is the structure of the folders.
 -requirements.txt
 -test.py
 -train.py
-`
+```
