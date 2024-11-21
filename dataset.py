@@ -7,7 +7,7 @@ import torch
 import datasets
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
-
+from config import read_config
 import tokenizers
 
 
@@ -48,7 +48,6 @@ def tokenize_batch(batch, tknizer):
 def create_dataloader_from_file(config):
     logging.info("Loading dataset")
     hf_dataset = datasets.load_dataset(config.dataloader.dataset)
-
     # Filter data to a manageable size to prevent things from going out of hand
     logging.info("Filtering dataset to smaller size based on wanted fraction")
     inv_fraction = 1 / config.dataloader.fraction_of_data
@@ -168,19 +167,20 @@ def create_dataloader_from_file(config):
     return train_dataloader, val_dataloader
 
 
-def main():
-    train_dataloader, val_dataloader = create_dataloader_from_file(
-        "roneneldan/TinyStories", 512, 0.05, 64, 8, 1500,
-    )
+# def main():
+#     train_dataloader, val_dataloader = create_dataloader_from_file(
+#         "roneneldan/TinyStories", 512, 0.05, 64, 8, 1500,
+#     )
 
-    for x, y in train_dataloader:
-        print(x)
-        print(y)
-        break
-    for x, y in val_dataloader:
-        print(x)
-        print(y)
-        break
+#     for x, y in train_dataloader:
+#         print(x)
+#         print(y)
+#         break
+#     for x, y in val_dataloader:
+#         print(x)
+#         print(y)
+#         break
+
 
 
 if __name__ == "__main__":
@@ -206,25 +206,35 @@ if __name__ == "__main__":
         const=logging.INFO,
     )
 
+    # parser.add_argument(
+    #     "-s",
+    #     "--seed",
+    #     help="Force seed for deterministic randomness",
+    #     action="store",
+    #     dest="seed",
+    #     default=None,
+    # )
     parser.add_argument(
-        "-s",
-        "--seed",
-        help="Force seed for deterministic randomness",
+        '--config',
+        help="Provide the path to the config file [TOML]. For more " \
+        "information, check config.py",
         action="store",
-        dest="seed",
+        default="artifacts/transformer/config.toml",
     )
-
     parser.add_argument(
         "--vocab-output",
         help="Location of vocabulary file",
         action="store",
         dest="vocab_output",
-        default="artifacts/vocab.pkl",
+        default="artifacts/tokenizer2.json",
     )
 
     # Parse the arguments
     args = parser.parse_args()
-
+    configuration = read_config(args.config)
     logging.basicConfig(level=args.loglevel)
 
-    main()
+    train_dataloader, val_dataloader = create_dataloader_from_file(configuration)
+
+    # main(configuration)
+    # main()
