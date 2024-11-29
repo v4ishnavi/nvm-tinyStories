@@ -1,6 +1,7 @@
 # nvm-tinyStories
 
 the following is the structure of the folders. 
+```
 -artifacts 
 -- transformer-iterations
 --- config.toml
@@ -45,6 +46,8 @@ the following is the structure of the folders.
 -reports
 --interim.pdf
 --final.pdf
+
+
 -gitignore
 -config.py
 -dataset.py
@@ -54,3 +57,5 @@ the following is the structure of the folders.
 -requirements.txt
 -test.py
 -train.py
+```
+the github link is (private repo) : https://github.com/v4ishnavi/nvm-tinyStories
