@@ -58,4 +58,4 @@ the following is the structure of the folders.
 -test.py
 -train.py
 ```
-the github link is (private repo) : https://github.com/v4ishnavi/nvm-tinyStories
+the github link is : https://github.com/v4ishnavi/nvm-tinyStories
